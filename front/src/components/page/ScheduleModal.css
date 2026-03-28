@@ -1,0 +1,81 @@
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 100px;
+  z-index: 1000;
+}
+
+.modal-content.schedule-modal {
+  background-color: #f0f0f0;
+  padding: 20px 24px;
+  border-radius: 8px;
+  width: 520px;
+  max-width: 90%;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  position: relative;
+}
+
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.schedule-modal h2 {
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.schedule-modal p {
+  text-align: center;
+  margin-bottom: 18px;
+  font-size: 14px;
+  color: #555;
+}
+
+.schedule-table-wrap {
+  overflow-x: auto;
+}
+
+.schedule-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: #fff;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.schedule-table th,
+.schedule-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e2e6ea;
+  font-size: 14px;
+}
+
+.schedule-table th {
+  background-color: #e9ecef;
+  text-align: left;
+  font-weight: 600;
+  color: #333;
+}
+
+.schedule-day-cell {
+  font-weight: 600;
+  background-color: #f8f9fa;
+  width: 120px;
+}
+
+.schedule-table tr:last-child td {
+  border-bottom: none;
+}

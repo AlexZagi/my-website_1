@@ -1,0 +1,83 @@
+.header {
+  position: fixed; /* Фиксируем header на экране */
+  top: 0;
+  left: 0;
+  width: 100%;
+  background-color: #fff; /* Или ваш цвет фона */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Тень для видимости */
+  z-index: 1000; /* Чтобы header был поверх контента */
+  transition: transform 0.3s ease; /* Плавная анимация */
+  transform: translateY(0); /* Начальная позиция */
+}
+
+.header--hidden {
+  transform: translateY(-100%); /* Скрываем header, сдвигая вверх */
+}
+
+.header--visible {
+  transform: translateY(0); /* Показываем header */
+}
+
+.container{
+background-color: black;
+max-vidth: 1720px;
+margin: 0 auto;
+padding: 0 30px;
+}
+
+.header_row{
+display: flex;
+column-gap: 30px;
+align-items: center;
+justify-content: space-between;
+}
+
+.header_logo {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  column-gap: 5px;
+}
+
+
+.header_logo span{
+font-weight: 900;
+font-size: 20px;
+line-height: 1.5;
+letter-spacing: 0.03em;
+}
+
+.header_nav ul{
+display: flex;
+column-gap: 65px;
+align-items: center;
+list-style-type: none;
+}
+
+.header_nav a,
+.header_link_button {
+text-decoration: none;
+color: white;
+font-weight: 700;
+font-size: 18px;
+background: none;
+border: none;
+padding: 0;
+cursor: pointer;
+}
+
+.header_nav a img{
+column-gap: 30px;
+align-items: center;
+justify-content: space-between;
+}
+
+.header_user_block {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}.header_username {
+  color: white;
+  font-weight: 600;
+  font-size: 16px;
+}
