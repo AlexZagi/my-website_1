@@ -3,6 +3,7 @@ from .views import (
     RegisterAPI, LogoutView, ProfileView,
     TrainingBookingListCreateView, TrainingBookingDetailView,
     AdminBookingListDetailView, AdminBookingDetailView, PurchaseHistoryListCreateView,
+    PurchaseHistoryAdminListView, PurchaseHistoryAdminDetailView,
 )
 
 urlpatterns = [
@@ -14,4 +15,6 @@ urlpatterns = [
     path('purchase-history/', PurchaseHistoryListCreateView.as_view(), name='purchase-history'),
     path('admin/bookings/', AdminBookingListDetailView.as_view(), name='admin-bookings'),
     path('admin/bookings/<int:pk>/', AdminBookingDetailView.as_view(), name='admin-booking-detail'),
+    path('admin/purchase-history/', PurchaseHistoryAdminListView.as_view(), name='admin-purchase-history'),
+    path('admin/purchase-history/<int:pk>/', PurchaseHistoryAdminDetailView.as_view(), name='admin-purchase-history-detail'),
 ]

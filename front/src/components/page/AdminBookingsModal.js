@@ -72,7 +72,18 @@ function AdminBookingsModal({ isOpen, onClose }) {
   const [editSaving, setEditSaving] = useState(false);
   const [deleteLoadingId, setDeleteLoadingId] = useState(null);
 
+  const [adminTab, setAdminTab] = useState('bookings'); // 'bookings' | 'store'
+  const [purchases, setPurchases] = useState([]);
+  const [purchasesLoading, setPurchasesLoading] = useState(false);
+  const [purchasesError, setPurchasesError] = useState('');
+
   const token = localStorage.getItem('access_token');
+
+  const PURCHASE_STATUS_LABELS = {
+    processing: 'В обработке',
+    ready: 'Готово к выдаче',
+    delivered: 'Выдано',
+  };
 
   const fetchBookings = async () => {
     if (!token) return;
@@ -98,14 +109,43 @@ function AdminBookingsModal({ isOpen, onClose }) {
     }
   };
 
+  const fetchPurchases = async () => {
+    if (!token) return;
+    setPurchasesLoading(true);
+    setPurchasesError('');
+    try {
+      const res = await fetch(`${API_URL}users/admin/purchase-history/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 403) {
+        setPurchasesError('Доступ запрещён. Только для администратора.');
+        setPurchases([]);
+        return;
+      }
+      if (!res.ok) throw new Error('Не удалось загрузить покупки');
+      const data = await res.json();
+      setPurchases(data);
+    } catch (e) {
+      setPurchasesError(e.message || 'Ошибка загрузки');
+      setPurchases([]);
+    } finally {
+      setPurchasesLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (isOpen && token) {
       fetchBookings();
+      fetchPurchases();
     } else if (!isOpen) {
       setBookings([]);
       setError('');
       setEditingId(null);
       setDeleteLoadingId(null);
+      setPurchases([]);
+      setPurchasesError('');
+      setPurchasesLoading(false);
+      setAdminTab('bookings');
     }
   }, [isOpen]);
 
@@ -211,149 +251,227 @@ function AdminBookingsModal({ isOpen, onClose }) {
     <div className="admin-bookings-overlay">
       <div className="admin-bookings-modal">
         <button type="button" className="admin-bookings-close" onClick={onClose}>×</button>
-        <h2>Управление записями на тренировки</h2>
-        {error && <p className="admin-bookings-error">{error}</p>}
+        <h2>Управление записями</h2>
+        <div className="admin-bookings-tabs">
+          <button
+            type="button"
+            className={`admin-bookings-tab ${adminTab === 'bookings' ? 'admin-bookings-tab_active' : ''}`}
+            onClick={() => setAdminTab('bookings')}
+          >
+            Записи
+          </button>
+          <button
+            type="button"
+            className={`admin-bookings-tab ${adminTab === 'store' ? 'admin-bookings-tab_active' : ''}`}
+            onClick={() => setAdminTab('store')}
+          >
+            Магазин
+          </button>
+        </div>
 
-        {loading ? (
-          <div className="admin-bookings-loading">Загрузка...</div>
-        ) : bookings.length === 0 && !error ? (
-          <p className="admin-bookings-empty">Записей пока нет.</p>
-        ) : (
-          <ul className="admin-bookings-list">
-            {bookings.map((b) => (
-              <li key={b.id} className="admin-bookings-item">
-                {editingId === b.id ? (
-                  <div className="admin-bookings-edit">
-                    <div className="admin-bookings-form-group">
-                      <label>Пользователь</label>
-                      <span className="admin-bookings-user-readonly">{b.user_username}</span>
-                    </div>
-                    <div className="admin-bookings-form-group">
-                      <label>Телефон</label>
-                      <span className="admin-bookings-user-readonly">{b.user_phone || 'Не указан'}</span>
-                    </div>
-                    <div className="admin-bookings-form-group">
-                      <label>Тип тренировки</label>
-                      <select
-                        name="workout_type"
-                        value={editFormData.workout_type}
-                        onChange={handleEditFormChange}
-                        className="admin-bookings-input"
-                        required
-                      >
-                        {WORKOUT_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
-                      </select>
-                      {daysHint && <span className="admin-bookings-user-readonly">{daysHint}</span>}
-                    </div>
-                    <div className="admin-bookings-form-group">
-                      <label>Дата</label>
-                      <input
-                        type="date"
-                        name="date"
-                        value={editFormData.date}
-                        onChange={handleEditFormChange}
-                        className="admin-bookings-input"
-                        required
-                      />
-                    </div>
-                    <div className="admin-bookings-form-group">
-                      <label>Время</label>
-                      <select
-                        name="time"
-                        value={editFormData.time}
-                        onChange={handleEditFormChange}
-                        className="admin-bookings-input"
-                        required
-                        disabled={!editFormData.workout_type || !editFormData.date || allowedTimes.length === 0}
-                      >
-                        <option value="">
-                          {editFormData.workout_type && editFormData.date
-                            ? allowedTimes.length
-                              ? 'Выберите время'
-                              : 'В этот день время недоступно'
-                            : 'Сначала выберите тренировку и дату'}
-                        </option>
-                        {allowedTimes.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="admin-bookings-form-group">
-                      <label>Тренер</label>
-                      <input
-                        type="text"
-                        name="trainer"
-                        value={editFormData.trainer}
-                        onChange={handleEditFormChange}
-                        className="admin-bookings-input"
-                        placeholder="Необязательно"
-                      />
-                    </div>
-                    <div className="admin-bookings-form-group">
-                      <label>Комментарий</label>
-                      <textarea
-                        name="comments"
-                        value={editFormData.comments}
-                        onChange={handleEditFormChange}
-                        className="admin-bookings-input admin-bookings-input_textarea"
-                        rows={2}
-                        placeholder="Необязательно"
-                      />
-                    </div>
-                    <div className="admin-bookings-edit-actions">
-                      <button
-                        type="button"
-                        className="admin-bookings-btn admin-bookings-btn_primary"
-                        onClick={saveEdit}
-                        disabled={editSaving}
-                      >
-                        {editSaving ? 'Сохранение...' : 'Сохранить'}
-                      </button>
-                      <button
-                        type="button"
-                        className="admin-bookings-btn admin-bookings-btn_secondary"
-                        onClick={cancelEdit}
-                        disabled={editSaving}
-                      >
-                        Отмена
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <span className="admin-bookings-user">{b.user_username}</span>
-                    <span className="admin-bookings-phone">Телефон: {b.user_phone || 'Не указан'}</span>
-                    <span className="admin-bookings-type">{b.workout_type_display}</span>
-                    <span className="admin-bookings-datetime">
-                      {new Date(b.date).toLocaleDateString('ru-RU')} в {typeof b.time === 'string' ? b.time.slice(0, 5) : b.time}
+        {adminTab === 'bookings' && (
+          <>
+            {error && <p className="admin-bookings-error">{error}</p>}
+
+            {loading ? (
+              <div className="admin-bookings-loading">Загрузка...</div>
+            ) : bookings.length === 0 && !error ? (
+              <p className="admin-bookings-empty">Записей пока нет.</p>
+            ) : (
+              <ul className="admin-bookings-list">
+                {bookings.map((b) => (
+                  <li key={b.id} className="admin-bookings-item">
+                    {editingId === b.id ? (
+                      <div className="admin-bookings-edit">
+                        <div className="admin-bookings-form-group">
+                          <label>Пользователь</label>
+                          <span className="admin-bookings-user-readonly">{b.user_username}</span>
+                        </div>
+                        <div className="admin-bookings-form-group">
+                          <label>Телефон</label>
+                          <span className="admin-bookings-user-readonly">{b.user_phone || 'Не указан'}</span>
+                        </div>
+                        <div className="admin-bookings-form-group">
+                          <label>Тип тренировки</label>
+                          <select
+                            name="workout_type"
+                            value={editFormData.workout_type}
+                            onChange={handleEditFormChange}
+                            className="admin-bookings-input"
+                            required
+                          >
+                            {WORKOUT_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                          {daysHint && <span className="admin-bookings-user-readonly">{daysHint}</span>}
+                        </div>
+                        <div className="admin-bookings-form-group">
+                          <label>Дата</label>
+                          <input
+                            type="date"
+                            name="date"
+                            value={editFormData.date}
+                            onChange={handleEditFormChange}
+                            className="admin-bookings-input"
+                            required
+                          />
+                        </div>
+                        <div className="admin-bookings-form-group">
+                          <label>Время</label>
+                          <select
+                            name="time"
+                            value={editFormData.time}
+                            onChange={handleEditFormChange}
+                            className="admin-bookings-input"
+                            required
+                            disabled={!editFormData.workout_type || !editFormData.date || allowedTimes.length === 0}
+                          >
+                            <option value="">
+                              {editFormData.workout_type && editFormData.date
+                                ? allowedTimes.length
+                                  ? 'Выберите время'
+                                  : 'В этот день время недоступно'
+                                : 'Сначала выберите тренировку и дату'}
+                            </option>
+                            {allowedTimes.map((t) => (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="admin-bookings-form-group">
+                          <label>Тренер</label>
+                          <input
+                            type="text"
+                            name="trainer"
+                            value={editFormData.trainer}
+                            onChange={handleEditFormChange}
+                            className="admin-bookings-input"
+                            placeholder="Необязательно"
+                          />
+                        </div>
+                        <div className="admin-bookings-form-group">
+                          <label>Комментарий</label>
+                          <textarea
+                            name="comments"
+                            value={editFormData.comments}
+                            onChange={handleEditFormChange}
+                            className="admin-bookings-input admin-bookings-input_textarea"
+                            rows={2}
+                            placeholder="Необязательно"
+                          />
+                        </div>
+                        <div className="admin-bookings-edit-actions">
+                          <button
+                            type="button"
+                            className="admin-bookings-btn admin-bookings-btn_primary"
+                            onClick={saveEdit}
+                            disabled={editSaving}
+                          >
+                            {editSaving ? 'Сохранение...' : 'Сохранить'}
+                          </button>
+                          <button
+                            type="button"
+                            className="admin-bookings-btn admin-bookings-btn_secondary"
+                            onClick={cancelEdit}
+                            disabled={editSaving}
+                          >
+                            Отмена
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="admin-bookings-user">{b.user_username}</span>
+                        <span className="admin-bookings-phone">Телефон: {b.user_phone || 'Не указан'}</span>
+                        <span className="admin-bookings-type">{b.workout_type_display}</span>
+                        <span className="admin-bookings-datetime">
+                          {new Date(b.date).toLocaleDateString('ru-RU')} в {typeof b.time === 'string' ? b.time.slice(0, 5) : b.time}
+                        </span>
+                        {b.trainer && <span className="admin-bookings-trainer">Тренер: {b.trainer}</span>}
+                        <div className="admin-bookings-actions">
+                          <button
+                            type="button"
+                            className="admin-bookings-action-btn admin-bookings-action-btn_edit"
+                            onClick={() => startEdit(b)}
+                          >
+                            Редактировать
+                          </button>
+                          <button
+                            type="button"
+                            className="admin-bookings-action-btn admin-bookings-action-btn_delete"
+                            onClick={() => deleteBooking(b.id)}
+                            disabled={deleteLoadingId === b.id}
+                          >
+                            {deleteLoadingId === b.id ? 'Удаление...' : 'Удалить'}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+
+        {adminTab === 'store' && (
+          <>
+            {purchasesError && <p className="admin-bookings-error">{purchasesError}</p>}
+            {purchasesLoading ? (
+              <div className="admin-bookings-loading">Загрузка...</div>
+            ) : purchases.length === 0 && !purchasesError ? (
+              <p className="admin-bookings-empty">Покупок пока нет.</p>
+            ) : (
+              <ul className="admin-bookings-list">
+                {purchases.map((p) => (
+                  <li key={p.id} className="admin-bookings-item">
+                    <span className="admin-bookings-user">
+                      {p.user_username || p.full_name || 'Пользователь'}
                     </span>
-                    {b.trainer && <span className="admin-bookings-trainer">Тренер: {b.trainer}</span>}
+                    <span className="admin-bookings-phone">Телефон: {p.user_phone || p.phone || 'Не указан'}</span>
+                    <span className="admin-bookings-type">Товар: {p.product_name}</span>
+                    <span className="admin-bookings-datetime">
+                      Кол-во: {p.quantity} • Сумма: {Number(p.total_price).toLocaleString('ru-RU')} BYN
+                    </span>
+                    <span className="admin-bookings-datetime">
+                      Статус: {PURCHASE_STATUS_LABELS[p.status] || p.status}
+                    </span>
                     <div className="admin-bookings-actions">
-                      <button
-                        type="button"
-                        className="admin-bookings-action-btn admin-bookings-action-btn_edit"
-                        onClick={() => startEdit(b)}
+                      <select
+                        className="admin-bookings-input"
+                        value={p.status}
+                        onChange={async (e) => {
+                          const newStatus = e.target.value;
+                          try {
+                            const res = await fetch(`${API_URL}users/admin/purchase-history/${p.id}/`, {
+                              method: 'PATCH',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${token}`,
+                              },
+                              body: JSON.stringify({ status: newStatus }),
+                            });
+                            if (!res.ok) throw new Error('Не удалось обновить статус');
+                            const updated = await res.json();
+                            setPurchases((prev) => prev.map((x) => (x.id === p.id ? updated : x)));
+                          } catch (err) {
+                            setPurchasesError(err.message || 'Ошибка обновления');
+                          }
+                        }}
                       >
-                        Редактировать
-                      </button>
-                      <button
-                        type="button"
-                        className="admin-bookings-action-btn admin-bookings-action-btn_delete"
-                        onClick={() => deleteBooking(b.id)}
-                        disabled={deleteLoadingId === b.id}
-                      >
-                        {deleteLoadingId === b.id ? 'Удаление...' : 'Удалить'}
-                      </button>
+                        <option value="processing">В обработке</option>
+                        <option value="ready">Готово к выдаче</option>
+                        <option value="delivered">Выдано</option>
+                      </select>
                     </div>
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </div>
     </div>

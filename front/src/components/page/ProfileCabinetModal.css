@@ -78,6 +78,20 @@
   transition: color 0.2s, border-color 0.2s;
 }
 
+.profile-cabinet-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-cabinet-tab-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2d8a4e;
+  box-shadow: 0 0 10px rgba(45, 138, 78, 0.55);
+}
+
 .profile-cabinet-tab:hover {
   color: #333;
 }

@@ -5,7 +5,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from .models import Profile, TrainingBooking, PurchaseHistory
 from .serializers import (
     RegisterSerializer, LogoutSerializer, ProfileSerializer, ProfileUpdateSerializer,
-    TrainingBookingSerializer, AdminBookingSerializer, PurchaseHistorySerializer,
+    TrainingBookingSerializer, AdminBookingSerializer, PurchaseHistorySerializer, PurchaseHistoryAdminSerializer,
 )
 
 class RegisterAPI(generics.GenericAPIView):
@@ -119,6 +119,15 @@ class AdminBookingDetailView(APIView):
         serializer = TrainingBookingSerializer(booking, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save(admin_updated=True)
+        profile, _ = Profile.objects.get_or_create(user=booking.user)
+        # Симуляция SMS-уведомления в консоли сервера.
+        print(
+            f"[SMS] Пользователь {booking.user.username}: "
+            f"администратор изменил вашу запись на {booking.get_workout_type_display()} "
+            f"{booking.date} в {booking.time.strftime('%H:%M')}. "
+            f"Сообщение отправлено на номер {profile.phone or 'не указан'}.",
+            flush=True,
+        )
         return Response(AdminBookingSerializer(booking).data)
 
     def delete(self, request, pk):
@@ -143,3 +152,42 @@ class PurchaseHistoryListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save(user=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class PurchaseHistoryAdminListView(APIView):
+    permission_classes = (permissions.IsAdminUser,)
+
+    def get(self, request):
+        purchases = (
+            PurchaseHistory.objects.select_related('user', 'user__profile')
+            .all()
+            .order_by('-created_at')
+        )
+        serializer = PurchaseHistoryAdminSerializer(purchases, many=True)
+        return Response(serializer.data)
+
+
+class PurchaseHistoryAdminDetailView(APIView):
+    permission_classes = (permissions.IsAdminUser,)
+
+    def patch(self, request, pk):
+        try:
+            purchase = PurchaseHistory.objects.select_related('user', 'user__profile').get(pk=pk)
+        except PurchaseHistory.DoesNotExist:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        prev_status = purchase.status
+        serializer = PurchaseHistoryAdminSerializer(purchase, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        if prev_status != purchase.status and purchase.status == 'ready':
+            profile = getattr(purchase.user, 'profile', None)
+            print(
+                f"[SMS] Пользователь {purchase.user.username}: "
+                f"товар '{purchase.product_name}' готов к выдаче. "
+                f"Сообщение отправлено на номер {getattr(profile, 'phone', '') or 'не указан'}.",
+                flush=True,
+            )
+
+        return Response(PurchaseHistoryAdminSerializer(purchase).data)

@@ -232,11 +232,6 @@ const NutritionPage = () => {
             перекусам «на бегу».
           </p>
         </section>
-
-        <p className="nutrition-page__note">
-          После регистрации вы сможете записаться на консультацию и получить персональные рекомендации у наших
-          специалистов.
-        </p>
       </div>
 
       <ProductDetailModal

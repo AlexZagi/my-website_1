@@ -179,11 +179,52 @@ class PurchaseHistorySerializer(serializers.ModelSerializer):
             'phone',
             'address',
             'comment',
+            'status',
             'created_at',
         )
-        read_only_fields = ('id', 'created_at')
+        read_only_fields = ('id', 'created_at', 'status')
 
     def validate_quantity(self, value):
         if value < 1:
             raise serializers.ValidationError('Количество должно быть не меньше 1.')
         return value
+
+
+class PurchaseHistoryAdminSerializer(serializers.ModelSerializer):
+    STATUS_CHOICES = (
+        ('processing', 'В обработке'),
+        ('ready', 'Готово к выдаче'),
+        ('delivered', 'Выдано'),
+    )
+
+    status = serializers.ChoiceField(choices=STATUS_CHOICES)
+
+    user_username = serializers.SerializerMethodField()
+    user_phone = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PurchaseHistory
+        fields = (
+            'id',
+            'product_id',
+            'product_name',
+            'unit_price',
+            'quantity',
+            'total_price',
+            'full_name',
+            'phone',
+            'address',
+            'comment',
+            'status',
+            'created_at',
+            'user_username',
+            'user_phone',
+        )
+        read_only_fields = ('id', 'created_at', 'user_username', 'user_phone')
+
+    def get_user_username(self, obj):
+        return obj.user.username if obj.user_id else ''
+
+    def get_user_phone(self, obj):
+        profile = getattr(obj.user, 'profile', None)
+        return getattr(profile, 'phone', '') if profile else ''

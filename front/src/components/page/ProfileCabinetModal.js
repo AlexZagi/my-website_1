@@ -57,6 +57,7 @@ function ProfileCabinetModal({ isOpen, onClose }) {
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
 
   const token = localStorage.getItem('access_token');
+  const isAdmin = localStorage.getItem('is_staff') === 'true';
 
   const refreshShopOrders = useCallback(() => {
     setShopOrders(loadOrders());
@@ -230,6 +231,10 @@ function ProfileCabinetModal({ isOpen, onClose }) {
   };
 
   const handleTabChange = (tab) => {
+    if (isAdmin) {
+      setActiveTab('profile');
+      return;
+    }
     setActiveTab(tab);
     if (tab === 'bookings' && bookings.length === 0 && !bookingsLoading) {
       fetchBookings();
@@ -415,20 +420,27 @@ function ProfileCabinetModal({ isOpen, onClose }) {
               >
                 Профиль
               </button>
-              <button
-                type="button"
-                className={`profile-cabinet-tab ${activeTab === 'bookings' ? 'profile-cabinet-tab_active' : ''} ${bookingNotice ? 'profile-cabinet-tab_changed' : ''}`}
-                onClick={() => handleTabChange('bookings')}
-              >
-                Мои записи
-              </button>
-              <button
-                type="button"
-                className={`profile-cabinet-tab ${activeTab === 'orders' ? 'profile-cabinet-tab_active' : ''}`}
-                onClick={() => handleTabChange('orders')}
-              >
-                Мои заказы
-              </button>
+              {!isAdmin && (
+                <>
+                  <button
+                    type="button"
+                    className={`profile-cabinet-tab ${activeTab === 'bookings' ? 'profile-cabinet-tab_active' : ''} ${bookingNotice ? 'profile-cabinet-tab_changed' : ''}`}
+                    onClick={() => handleTabChange('bookings')}
+                  >
+                    Мои записи
+                  </button>
+                  <button
+                    type="button"
+                    className={`profile-cabinet-tab ${activeTab === 'orders' ? 'profile-cabinet-tab_active' : ''}`}
+                    onClick={() => handleTabChange('orders')}
+                  >
+                    <span className="profile-cabinet-tab-label">
+                      Мои заказы
+                      {shopOrders.length > 0 && <span className="profile-cabinet-tab-dot" aria-hidden="true" />}
+                    </span>
+                  </button>
+                </>
+              )}
             </div>
 
             {activeTab === 'profile' && (
@@ -515,7 +527,7 @@ function ProfileCabinetModal({ isOpen, onClose }) {
               </>
             )}
 
-            {activeTab === 'orders' && (
+            {!isAdmin && activeTab === 'orders' && (
               <section className="profile-cabinet-orders">
                 <h3 className="profile-cabinet-bookings-title">Мои заказы</h3>
                 {shopOrders.length === 0 ? (
@@ -608,7 +620,7 @@ function ProfileCabinetModal({ isOpen, onClose }) {
               </section>
             )}
 
-            {activeTab === 'bookings' && (
+            {!isAdmin && activeTab === 'bookings' && (
             <section className="profile-cabinet-bookings profile-cabinet-bookings_tab">
               <h3 className="profile-cabinet-bookings-title">Мои записи на тренировки</h3>
               {bookingNotice && <p className="profile-cabinet-bookings-notice">{bookingNotice}</p>}

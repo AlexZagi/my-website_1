@@ -46,6 +46,29 @@
   color: #333;
 }
 
+.admin-bookings-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.admin-bookings-tab {
+  flex: 1;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #e9ecef;
+  color: #333;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-bookings-tab_active {
+  background: #6c757d;
+  color: #fff;
+}
+
 .admin-bookings-error {
   color: #c00;
   margin-bottom: 12px;
