@@ -14,6 +14,49 @@ const WORKOUT_OPTIONS = [
   { value: 'aqua', label: 'Аквааэробика' },
 ];
 
+// Должно совпадать с WORKOUT_SCHEDULE на бэкенде.
+const TRAINING_SCHEDULE = {
+  cardio: { 0: ['09:00', '18:00'], 2: ['09:00', '16:00'], 4: ['09:00', '19:00'] },
+  strength: { 0: ['11:30', '15:00'], 2: ['10:30', '17:30'], 4: ['10:30', '21:00'] },
+  yoga: { 0: ['12:00'], 2: ['12:00'], 4: ['12:00'] },
+  functional: { 0: ['13:30'], 2: ['13:30'], 4: ['13:30'] },
+  gymnastics: { 1: ['09:00'], 3: ['09:00'], 5: ['09:00'] },
+  pilates: { 1: ['10:30'], 3: ['10:30'], 5: ['10:30'] },
+  crossfit: { 1: ['12:00'], 3: ['12:00'], 5: ['12:00'] },
+  aqua: { 1: ['13:30'], 3: ['13:30'], 5: ['13:30'] },
+};
+
+const WEEKDAY_NAMES = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
+
+// JS getDay(): 0 = Sunday ... 6 = Saturday -> Python style: 0 = Monday ... 6 = Sunday
+const jsDateToPythonWeekday = (dateStr) => {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return null;
+  const jsDay = d.getDay();
+  return (jsDay + 6) % 7;
+};
+
+const getAllowedTimes = (workoutType, dateStr) => {
+  if (!workoutType || !dateStr) return [];
+  const pyWeekday = jsDateToPythonWeekday(dateStr);
+  if (pyWeekday === null) return [];
+  const byDay = TRAINING_SCHEDULE[workoutType] || {};
+  return byDay[pyWeekday] || [];
+};
+
+const getAllowedDaysText = (workoutType) => {
+  if (!workoutType) return '';
+  const byDay = TRAINING_SCHEDULE[workoutType];
+  if (!byDay) return '';
+  const days = Object.keys(byDay)
+    .map((k) => parseInt(k, 10))
+    .sort((a, b) => a - b)
+    .map((pyIdx) => WEEKDAY_NAMES[pyIdx]);
+  if (!days.length) return '';
+  return `Для этой тренировки доступны дни: ${days.join(', ')}.`;
+};
+
 function AdminBookingsModal({ isOpen, onClose }) {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -84,7 +127,19 @@ function AdminBookingsModal({ isOpen, onClose }) {
 
   const handleEditFormChange = (e) => {
     const { name, value } = e.target;
-    setEditFormData((prev) => ({ ...prev, [name]: value }));
+    setEditFormData((prev) => {
+      const next = { ...prev, [name]: value };
+      if (name === 'workout_type' || name === 'date') {
+        const allowed = getAllowedTimes(
+          name === 'workout_type' ? value : next.workout_type,
+          name === 'date' ? value : next.date
+        );
+        if (!allowed.includes(next.time)) {
+          next.time = '';
+        }
+      }
+      return next;
+    });
   };
 
   const saveEdit = async () => {
@@ -113,7 +168,9 @@ function AdminBookingsModal({ isOpen, onClose }) {
       const updated = await res.json();
       setBookings((prev) =>
         prev.map((b) =>
-          b.id === editingId ? { ...updated, user_username: b.user_username } : b
+          b.id === editingId
+            ? { ...updated, user_username: updated.user_username || b.user_username, user_phone: updated.user_phone || b.user_phone }
+            : b
         )
       );
       setEditingId(null);
@@ -147,6 +204,8 @@ function AdminBookingsModal({ isOpen, onClose }) {
   };
 
   if (!isOpen) return null;
+  const allowedTimes = getAllowedTimes(editFormData.workout_type, editFormData.date);
+  const daysHint = getAllowedDaysText(editFormData.workout_type);
 
   return (
     <div className="admin-bookings-overlay">
@@ -170,6 +229,10 @@ function AdminBookingsModal({ isOpen, onClose }) {
                       <span className="admin-bookings-user-readonly">{b.user_username}</span>
                     </div>
                     <div className="admin-bookings-form-group">
+                      <label>Телефон</label>
+                      <span className="admin-bookings-user-readonly">{b.user_phone || 'Не указан'}</span>
+                    </div>
+                    <div className="admin-bookings-form-group">
                       <label>Тип тренировки</label>
                       <select
                         name="workout_type"
@@ -182,6 +245,7 @@ function AdminBookingsModal({ isOpen, onClose }) {
                           <option key={o.value} value={o.value}>{o.label}</option>
                         ))}
                       </select>
+                      {daysHint && <span className="admin-bookings-user-readonly">{daysHint}</span>}
                     </div>
                     <div className="admin-bookings-form-group">
                       <label>Дата</label>
@@ -196,14 +260,27 @@ function AdminBookingsModal({ isOpen, onClose }) {
                     </div>
                     <div className="admin-bookings-form-group">
                       <label>Время</label>
-                      <input
-                        type="time"
+                      <select
                         name="time"
                         value={editFormData.time}
                         onChange={handleEditFormChange}
                         className="admin-bookings-input"
                         required
-                      />
+                        disabled={!editFormData.workout_type || !editFormData.date || allowedTimes.length === 0}
+                      >
+                        <option value="">
+                          {editFormData.workout_type && editFormData.date
+                            ? allowedTimes.length
+                              ? 'Выберите время'
+                              : 'В этот день время недоступно'
+                            : 'Сначала выберите тренировку и дату'}
+                        </option>
+                        {allowedTimes.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="admin-bookings-form-group">
                       <label>Тренер</label>
@@ -249,6 +326,7 @@ function AdminBookingsModal({ isOpen, onClose }) {
                 ) : (
                   <>
                     <span className="admin-bookings-user">{b.user_username}</span>
+                    <span className="admin-bookings-phone">Телефон: {b.user_phone || 'Не указан'}</span>
                     <span className="admin-bookings-type">{b.workout_type_display}</span>
                     <span className="admin-bookings-datetime">
                       {new Date(b.date).toLocaleDateString('ru-RU')} в {typeof b.time === 'string' ? b.time.slice(0, 5) : b.time}

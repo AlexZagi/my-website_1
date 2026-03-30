@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './ProfileCabinetModal.css';
+import { loadOrders, removeOrderItem } from '../../utils/shopOrders';
+import { Link } from 'react-router-dom';
 
 const API_URL = 'http://127.0.0.1:8000/api/';
+const CURRENCY = 'BYN';
 
 const WORKOUT_OPTIONS = [
   { value: 'cardio', label: 'Кардио-тренировки' },
@@ -30,7 +33,8 @@ function ProfileCabinetModal({ isOpen, onClose }) {
   const [saving, setSaving] = useState(false);
   const [bookings, setBookings] = useState([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'bookings'
+  const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'bookings' | 'orders'
+  const [shopOrders, setShopOrders] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [editFormData, setEditFormData] = useState({
     workout_type: '',
@@ -41,8 +45,56 @@ function ProfileCabinetModal({ isOpen, onClose }) {
   });
   const [editSaving, setEditSaving] = useState(false);
   const [deleteLoadingId, setDeleteLoadingId] = useState(null);
+  const [bookingNotice, setBookingNotice] = useState('');
+  const [orderQuantities, setOrderQuantities] = useState({});
+  const [checkoutItem, setCheckoutItem] = useState(null);
+  const [checkoutForm, setCheckoutForm] = useState({
+    fullName: '',
+    phone: '',
+    address: '',
+    comment: '',
+  });
+  const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
 
   const token = localStorage.getItem('access_token');
+
+  const refreshShopOrders = useCallback(() => {
+    setShopOrders(loadOrders());
+  }, []);
+
+  const getNumericPrice = (price) => {
+    if (typeof price === 'number') return price;
+    if (typeof price === 'string') {
+      const normalized = Number(price.replace(/\s/g, '').replace(',', '.').replace(/[^\d.]/g, ''));
+      return Number.isFinite(normalized) ? normalized : 0;
+    }
+    return 0;
+  };
+
+  const getOrderQuantity = (itemId) => {
+    const qty = Number(orderQuantities[itemId]);
+    if (!Number.isFinite(qty) || qty < 1) return 1;
+    return Math.min(99, Math.floor(qty));
+  };
+
+  const adminChangedBookings = bookings.filter((b) => b.admin_updated);
+
+  useEffect(() => {
+    const onShopOrders = () => refreshShopOrders();
+    window.addEventListener('shopOrdersUpdated', onShopOrders);
+    return () => window.removeEventListener('shopOrdersUpdated', onShopOrders);
+  }, [refreshShopOrders]);
+
+  useEffect(() => {
+    setOrderQuantities((prev) => {
+      const next = {};
+      shopOrders.forEach((o) => {
+        const prevQty = Number(prev[o.id]);
+        next[o.id] = Number.isFinite(prevQty) && prevQty >= 1 ? Math.min(99, Math.floor(prevQty)) : 1;
+      });
+      return next;
+    });
+  }, [shopOrders]);
 
   useEffect(() => {
     if (isOpen && token) {
@@ -55,6 +107,9 @@ function ProfileCabinetModal({ isOpen, onClose }) {
       setActiveTab('profile');
       setEditingId(null);
       setDeleteLoadingId(null);
+      setCheckoutItem(null);
+      setCheckoutSubmitting(false);
+      setBookingNotice('');
     }
   }, [isOpen]);
 
@@ -87,6 +142,7 @@ function ProfileCabinetModal({ isOpen, onClose }) {
       if (data.avatar) setAvatarPreview(data.avatar);
       else setAvatarPreview(null);
       fetchBookings();
+      refreshShopOrders();
     } catch (e) {
       setError(e.message || 'Ошибка загрузки');
     } finally {
@@ -156,11 +212,18 @@ function ProfileCabinetModal({ isOpen, onClose }) {
       if (res.ok) {
         const data = await res.json();
         setBookings(data);
+        if (data.some((b) => b.admin_updated)) {
+          setBookingNotice('Внимание: администратор изменил одну или несколько ваших записей на тренировки.');
+        } else {
+          setBookingNotice('');
+        }
       } else {
         setBookings([]);
+        setBookingNotice('');
       }
     } catch {
       setBookings([]);
+      setBookingNotice('');
     } finally {
       setBookingsLoading(false);
     }
@@ -170,8 +233,88 @@ function ProfileCabinetModal({ isOpen, onClose }) {
     setActiveTab(tab);
     if (tab === 'bookings' && bookings.length === 0 && !bookingsLoading) {
       fetchBookings();
+    } else if (tab === 'orders') {
+      refreshShopOrders();
     } else if (tab === 'profile') {
       setEditingId(null);
+    }
+  };
+
+  const handleRemoveOrder = (itemId) => {
+    if (!window.confirm('Убрать этот товар из заказов?')) return;
+    removeOrderItem(itemId);
+    refreshShopOrders();
+  };
+
+  const handleQuantityChange = (itemId, value) => {
+    const parsed = Number(value);
+    const safeQty = Number.isFinite(parsed) ? Math.max(1, Math.min(99, Math.floor(parsed))) : 1;
+    setOrderQuantities((prev) => ({ ...prev, [itemId]: safeQty }));
+  };
+
+  const openCheckout = (orderItem) => {
+    setCheckoutItem(orderItem);
+    setCheckoutForm((prev) => ({
+      ...prev,
+      fullName: prev.fullName || `${formData.first_name} ${formData.last_name}`.trim() || profile?.username || '',
+      phone: prev.phone || formData.phone || '',
+    }));
+  };
+
+  const closeCheckout = () => {
+    setCheckoutItem(null);
+  };
+
+  const handleCheckoutFormChange = (e) => {
+    const { name, value } = e.target;
+    setCheckoutForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleCheckoutSubmit = async (e) => {
+    e.preventDefault();
+    if (!checkoutItem) return;
+    if (!token) {
+      setError('Требуется авторизация для оформления покупки.');
+      return;
+    }
+    const qty = getOrderQuantity(checkoutItem.id);
+    const unitPrice = getNumericPrice(checkoutItem.price);
+    const total = unitPrice * qty;
+
+    try {
+      setCheckoutSubmitting(true);
+      setError('');
+      const response = await fetch(`${API_URL}users/purchase-history/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          product_id: checkoutItem.productId ? String(checkoutItem.productId) : '',
+          product_name: checkoutItem.name,
+          unit_price: unitPrice.toFixed(2),
+          quantity: qty,
+          total_price: total.toFixed(2),
+          full_name: checkoutForm.fullName.trim(),
+          phone: checkoutForm.phone.trim(),
+          address: checkoutForm.address.trim(),
+          comment: checkoutForm.comment.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Не удалось оформить покупку.');
+      }
+
+      removeOrderItem(checkoutItem.id);
+      alert(`Покупка оформлена!\nКоличество: ${qty}\nСумма: ${total.toLocaleString('ru-RU')} ${CURRENCY}`);
+      setCheckoutItem(null);
+    } catch (e2) {
+      setError(e2.message || 'Ошибка оформления покупки.');
+    } finally {
+      setCheckoutSubmitting(false);
     }
   };
 
@@ -274,10 +417,17 @@ function ProfileCabinetModal({ isOpen, onClose }) {
               </button>
               <button
                 type="button"
-                className={`profile-cabinet-tab ${activeTab === 'bookings' ? 'profile-cabinet-tab_active' : ''}`}
+                className={`profile-cabinet-tab ${activeTab === 'bookings' ? 'profile-cabinet-tab_active' : ''} ${bookingNotice ? 'profile-cabinet-tab_changed' : ''}`}
                 onClick={() => handleTabChange('bookings')}
               >
                 Мои записи
+              </button>
+              <button
+                type="button"
+                className={`profile-cabinet-tab ${activeTab === 'orders' ? 'profile-cabinet-tab_active' : ''}`}
+                onClick={() => handleTabChange('orders')}
+              >
+                Мои заказы
               </button>
             </div>
 
@@ -365,9 +515,112 @@ function ProfileCabinetModal({ isOpen, onClose }) {
               </>
             )}
 
+            {activeTab === 'orders' && (
+              <section className="profile-cabinet-orders">
+                <h3 className="profile-cabinet-bookings-title">Мои заказы</h3>
+                {shopOrders.length === 0 ? (
+                  <>
+                    <p className="profile-cabinet-bookings-empty">Пока нет товаров. Перейдите в магазин, чтобы добавить их в заказы.</p>
+                    <Link
+                      to="/pitanie"
+                      className="profile-cabinet-btn profile-cabinet-btn_secondary profile-cabinet-orders-shop-link"
+                      onClick={onClose}
+                    >
+                      Перейти в магазин
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <div className="profile-cabinet-orders-actions">
+                      <Link
+                        to="/pitanie"
+                        className="profile-cabinet-btn profile-cabinet-btn_secondary"
+                        onClick={onClose}
+                      >
+                        Купить ещё
+                      </Link>
+                    </div>
+                    <ul className="profile-cabinet-orders-list">
+                      {shopOrders.map((o) => (
+                        <li key={o.id} className="profile-cabinet-order-item">
+                          {o.image && (
+                            <div className="profile-cabinet-order-thumb">
+                              <img src={o.image} alt={o.name} className="profile-cabinet-order-img" />
+                            </div>
+                          )}
+                          <div className="profile-cabinet-order-body">
+                            {(() => {
+                              const qty = getOrderQuantity(o.id);
+                              const lineTotal = getNumericPrice(o.price) * qty;
+                              return (
+                                <>
+                            <span className="profile-cabinet-order-name">{o.name}</span>
+                            <span className="profile-cabinet-order-price">
+                              {typeof o.price === 'number' ? o.price.toLocaleString('ru-RU') : o.price} {CURRENCY}
+                            </span>
+                            <div className="profile-cabinet-order-qty-row">
+                              <label htmlFor={`order-qty-${o.id}`} className="profile-cabinet-order-qty-label">Количество:</label>
+                              <input
+                                id={`order-qty-${o.id}`}
+                                type="number"
+                                min="1"
+                                max="99"
+                                value={qty}
+                                onChange={(e) => handleQuantityChange(o.id, e.target.value)}
+                                className="profile-cabinet-order-qty-input"
+                              />
+                            </div>
+                            <span className="profile-cabinet-order-total">
+                              Сумма: {lineTotal.toLocaleString('ru-RU')} {CURRENCY}
+                            </span>
+                            <span className="profile-cabinet-order-date">
+                              {new Date(o.createdAt).toLocaleString('ru-RU', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                            <button
+                              type="button"
+                              className="profile-cabinet-order-buy"
+                              onClick={() => openCheckout(o)}
+                            >
+                              Купить
+                            </button>
+                            <button
+                              type="button"
+                              className="profile-cabinet-order-remove"
+                              onClick={() => handleRemoveOrder(o.id)}
+                            >
+                              Убрать из заказов
+                            </button>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </section>
+            )}
+
             {activeTab === 'bookings' && (
             <section className="profile-cabinet-bookings profile-cabinet-bookings_tab">
               <h3 className="profile-cabinet-bookings-title">Мои записи на тренировки</h3>
+              {bookingNotice && <p className="profile-cabinet-bookings-notice">{bookingNotice}</p>}
+              {adminChangedBookings.length > 0 && (
+                <ul className="profile-cabinet-admin-changes-list">
+                  {adminChangedBookings.map((b) => (
+                    <li key={`changed-${b.id}`} className="profile-cabinet-admin-changes-item">
+                      Изменена запись: {b.workout_type_display} — {new Date(b.date).toLocaleDateString('ru-RU')} в {b.time.slice(0, 5)}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {bookingsLoading ? (
                 <p className="profile-cabinet-bookings-loading">Загрузка записей...</p>
               ) : bookings.length === 0 ? (
@@ -375,7 +628,7 @@ function ProfileCabinetModal({ isOpen, onClose }) {
               ) : (
                 <ul className="profile-cabinet-bookings-list">
                   {bookings.map((b) => (
-                    <li key={b.id} className="profile-cabinet-booking-item">
+                    <li key={b.id} className={`profile-cabinet-booking-item ${b.admin_updated ? 'profile-cabinet-booking-item_changed' : ''}`}>
                       {editingId === b.id ? (
                         <div className="profile-cabinet-booking-edit">
                           <div className="profile-cabinet-form-group">
@@ -490,6 +743,82 @@ function ProfileCabinetModal({ isOpen, onClose }) {
           </>
         )}
       </div>
+      {checkoutItem && (
+        <div className="profile-cabinet-checkout-overlay" onClick={closeCheckout}>
+          <div className="profile-cabinet-checkout-modal" onClick={(e) => e.stopPropagation()}>
+            <button type="button" className="profile-cabinet-close" onClick={closeCheckout}>×</button>
+            <h3 className="profile-cabinet-bookings-title">Оформление покупки</h3>
+            <p className="profile-cabinet-checkout-product">{checkoutItem.name}</p>
+            <p className="profile-cabinet-checkout-total">
+              Итого: {(getNumericPrice(checkoutItem.price) * getOrderQuantity(checkoutItem.id)).toLocaleString('ru-RU')} {CURRENCY}
+            </p>
+            <form className="profile-cabinet-checkout-form" onSubmit={handleCheckoutSubmit}>
+              <div className="profile-cabinet-form-group">
+                <label>Количество</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="99"
+                  value={getOrderQuantity(checkoutItem.id)}
+                  onChange={(e) => handleQuantityChange(checkoutItem.id, e.target.value)}
+                  className="profile-cabinet-input"
+                  required
+                />
+              </div>
+              <div className="profile-cabinet-form-group">
+                <label>ФИО</label>
+                <input
+                  type="text"
+                  name="fullName"
+                  value={checkoutForm.fullName}
+                  onChange={handleCheckoutFormChange}
+                  className="profile-cabinet-input"
+                  required
+                />
+              </div>
+              <div className="profile-cabinet-form-group">
+                <label>Телефон</label>
+                <input
+                  type="tel"
+                  name="phone"
+                  value={checkoutForm.phone}
+                  onChange={handleCheckoutFormChange}
+                  className="profile-cabinet-input"
+                  required
+                />
+              </div>
+              <div className="profile-cabinet-form-group">
+                <label>Адрес доставки</label>
+                <input
+                  type="text"
+                  name="address"
+                  value={checkoutForm.address}
+                  onChange={handleCheckoutFormChange}
+                  className="profile-cabinet-input"
+                  required
+                />
+              </div>
+              <div className="profile-cabinet-form-group">
+                <label>Комментарий</label>
+                <textarea
+                  name="comment"
+                  value={checkoutForm.comment}
+                  onChange={handleCheckoutFormChange}
+                  className="profile-cabinet-input profile-cabinet-input_textarea"
+                  rows={2}
+                />
+              </div>
+              <button
+                type="submit"
+                className="profile-cabinet-btn profile-cabinet-btn_primary"
+                disabled={checkoutSubmitting}
+              >
+                {checkoutSubmitting ? 'Оформляем...' : 'Подтвердить покупку'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

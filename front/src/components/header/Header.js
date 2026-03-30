@@ -1,6 +1,6 @@
 import logoImg from './../../img/icons/fitness.jpg'
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import AuthModal from '../page/ProfileModal';
 import ScheduleModal from '../page/ScheduleModal';
 import SignUpModal from '../page/SignUpModal';
@@ -22,23 +22,57 @@ function Header() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isStaff, setIsStaff] = useState(false);
   const [username, setUsername] = useState(''); // Логин текущего пользователя
+  const [hasBookingAlert, setHasBookingAlert] = useState(false);
+  const navigate = useNavigate();
+  const API_URL = 'http://127.0.0.1:8000/api/';
 
   const checkLoginStatus = () => {
     const token = localStorage.getItem('access_token');
     setIsLoggedIn(!!token);
     setUsername(localStorage.getItem('username') || '');
     setIsStaff(localStorage.getItem('is_staff') === 'true');
+    if (!token) setHasBookingAlert(false);
   };
+
+  const fetchBookingAlerts = useCallback(async () => {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      setHasBookingAlert(false);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_URL}users/training-bookings/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        setHasBookingAlert(false);
+        return;
+      }
+      const data = await res.json();
+      setHasBookingAlert(Array.isArray(data) && data.some((b) => b.admin_updated));
+    } catch {
+      setHasBookingAlert(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const openAuthFromPage = () => setShowAuthModal(true);
+    window.addEventListener('openAuthModal', openAuthFromPage);
+    return () => window.removeEventListener('openAuthModal', openAuthFromPage);
+  }, []);
 
   useEffect(() => {
     checkLoginStatus(); // Проверяем статус при монтировании компонента
+    fetchBookingAlerts();
 
     const handleStorageChange = () => {
       checkLoginStatus(); // Обновляем статус при изменении localStorage
+      fetchBookingAlerts();
     };
 
     const handleLoginStatusChange = () => {
       checkLoginStatus();
+      fetchBookingAlerts();
     };
 
     window.addEventListener('storage', handleStorageChange);
@@ -57,12 +91,19 @@ function Header() {
     };
 
     window.addEventListener('scroll', handleScroll);
+    window.addEventListener('focus', fetchBookingAlerts);
+    const alertsInterval = window.setInterval(() => {
+      fetchBookingAlerts();
+    }, 10000);
     return () => {
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('loginStatusChange', handleLoginStatusChange);
+      window.removeEventListener('focus', fetchBookingAlerts);
+      window.clearInterval(alertsInterval);
     };
-  }, [lastScrollY]);
+  }, [fetchBookingAlerts, lastScrollY]);
+
 
   const handleOpenAuthModal = () => {
     setShowAuthModal(true);
@@ -105,8 +146,9 @@ function Header() {
     setIsLoggedIn(false);
     setIsStaff(false);
     setUsername('');
+    window.dispatchEvent(new CustomEvent('loginStatusChange'));
     alert('Вы успешно вышли из системы.');
-    // window.location.reload(); // Перезагрузить страницу для обновления состояния, если нужно
+    navigate('/');
   };
 
   const handleOpenAdminBookingsModal = () => {
@@ -129,7 +171,23 @@ function Header() {
           <div className="header_nav">
             <ul>
               <li><button onClick={handleOpenScheduleModal} className="header_link_button">Расписание</button></li>
-              {isLoggedIn && <li><button onClick={handleOpenProfileCabinetModal} className="header_link_button">Личный кабинет</button></li>}
+              <li><Link to="/pitanie" className="header_link_button">Питание</Link></li>
+              {isLoggedIn && (
+                <li>
+                  <button onClick={handleOpenProfileCabinetModal} className="header_link_button header_profile_link">
+                    <span>Личный кабинет</span>
+                    {!isStaff && hasBookingAlert && (
+                      <span
+                        className="header_bell_button header_bell_button--active"
+                        title="Есть изменения от администратора"
+                        aria-label="Есть уведомления о записях"
+                      >
+                        🔔
+                      </span>
+                    )}
+                  </button>
+                </li>
+              )}
               {isLoggedIn && <li><button onClick={handleOpenSignUpModal} className="header_link_button">Записаться</button></li>}
               {isLoggedIn && isStaff && <li><button onClick={handleOpenAdminBookingsModal} className="header_link_button">Управление записями</button></li>}
               <li>

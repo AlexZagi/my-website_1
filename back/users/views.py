@@ -2,10 +2,10 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from .models import Profile, TrainingBooking
+from .models import Profile, TrainingBooking, PurchaseHistory
 from .serializers import (
     RegisterSerializer, LogoutSerializer, ProfileSerializer, ProfileUpdateSerializer,
-    TrainingBookingSerializer, AdminBookingSerializer,
+    TrainingBookingSerializer, AdminBookingSerializer, PurchaseHistorySerializer,
 )
 
 class RegisterAPI(generics.GenericAPIView):
@@ -60,7 +60,16 @@ class TrainingBookingListCreateView(APIView):
     def post(self, request):
         serializer = TrainingBookingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(user=request.user)
+        booking = serializer.save(user=request.user)
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        # Симуляция SMS-уведомления в консоли сервера.
+        print(
+            f"[SMS] Пользователь {request.user.username}: "
+            f"вы записаны на {booking.get_workout_type_display()} "
+            f"{booking.date} в {booking.time.strftime('%H:%M')}. "
+            f"Сообщение отправлено на номер {profile.phone or 'не указан'}.",
+            flush=True,
+        )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
@@ -79,7 +88,7 @@ class TrainingBookingDetailView(APIView):
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         serializer = TrainingBookingSerializer(booking, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        serializer.save(admin_updated=False)
         return Response(serializer.data)
 
     def delete(self, request, pk):
@@ -94,7 +103,7 @@ class AdminBookingListDetailView(APIView):
     permission_classes = (permissions.IsAdminUser,)
 
     def get(self, request):
-        bookings = TrainingBooking.objects.select_related('user').order_by('-date', '-time')
+        bookings = TrainingBooking.objects.select_related('user', 'user__profile').order_by('-date', '-time')
         serializer = AdminBookingSerializer(bookings, many=True)
         return Response(serializer.data)
 
@@ -109,8 +118,8 @@ class AdminBookingDetailView(APIView):
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         serializer = TrainingBookingSerializer(booking, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
+        serializer.save(admin_updated=True)
+        return Response(AdminBookingSerializer(booking).data)
 
     def delete(self, request, pk):
         try:
@@ -119,3 +128,18 @@ class AdminBookingDetailView(APIView):
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         booking.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class PurchaseHistoryListCreateView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request):
+        purchases = PurchaseHistory.objects.filter(user=request.user)
+        serializer = PurchaseHistorySerializer(purchases, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = PurchaseHistorySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(user=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)

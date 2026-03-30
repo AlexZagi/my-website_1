@@ -72,6 +72,39 @@ align-items: center;
 justify-content: space-between;
 }
 
+.header_profile_item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header_profile_link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header_bell_button {
+  background: transparent;
+  border: none;
+  color: #9aa0a6;
+  font-size: 21px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 1px 3px;
+  opacity: 1;
+}
+
+.header_bell_button--inactive {
+  color: #8c8c8c;
+  text-shadow: none;
+}
+
+.header_bell_button--active {
+  color: #ff4d4f;
+  text-shadow: 0 0 10px rgba(255, 209, 102, 0.55);
+}
+
 .header_user_block {
   display: inline-flex;
   align-items: center;

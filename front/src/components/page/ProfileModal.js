@@ -3,7 +3,7 @@ import './ProfileModal.css'; // Импорт CSS
 
 const API_URL = 'http://127.0.0.1:8000/api/'; // URL вашего бэкенда
 
-const emptyForm = { username: '', email: '', password: '', name: '' };
+const emptyForm = { username: '', email: '', password: '', passwordConfirm: '', name: '', phone: '' };
 
 const AuthModal = ({ isOpen, onClose }) => {
   const [isLogin, setIsLogin] = useState(true);
@@ -25,6 +25,19 @@ const AuthModal = ({ isOpen, onClose }) => {
     e.preventDefault();
     setError(''); // Очистить предыдущие ошибки
 
+    if (!isLogin) {
+      if (formData.password !== formData.passwordConfirm) {
+        setError('Пароли не совпадают.');
+        return;
+      }
+      const byPhoneRegex = /^\+375\d{9}$/;
+      const normalizedPhone = String(formData.phone || '').replace(/[^\d+]/g, '');
+      if (!byPhoneRegex.test(normalizedPhone)) {
+        setError('Введите белорусский номер в формате +375XXXXXXXXX.');
+        return;
+      }
+    }
+
     let url = '';
     let body = {};
 
@@ -37,8 +50,10 @@ const AuthModal = ({ isOpen, onClose }) => {
         username: formData.username,
         email: formData.email,
         password: formData.password,
+        password_confirm: formData.passwordConfirm,
         first_name: formData.name, // Используем name как first_name для регистрации
         last_name: '', // Можно добавить отдельное поле для фамилии
+        phone: String(formData.phone || '').replace(/[^\d+]/g, ''),
       };
     }
 
@@ -67,6 +82,7 @@ const AuthModal = ({ isOpen, onClose }) => {
               localStorage.setItem('is_staff', profileData.is_staff ? 'true' : 'false');
             }
           } catch (e) { /* ignore */ }
+          window.dispatchEvent(new CustomEvent('loginStatusChange'));
           alert('Авторизация успешна!');
         } else {
           alert('Регистрация успешна! Теперь вы можете войти.');
@@ -140,6 +156,20 @@ const AuthModal = ({ isOpen, onClose }) => {
               />
             </div>
           )}
+          {!isLogin && (
+            <div className="form-group">
+              <label>Телефон:</label>
+              <input
+                type="tel"
+                name="phone"
+                value={formData.phone}
+                onChange={handleChange}
+                placeholder="+375291234567"
+                pattern="^\+375\d{9}$"
+                required
+              />
+            </div>
+          )}
           <div className="form-group">
             <label>Пароль:</label>
             <input
@@ -150,6 +180,18 @@ const AuthModal = ({ isOpen, onClose }) => {
               required
             />
           </div>
+          {!isLogin && (
+            <div className="form-group">
+              <label>Повторите пароль:</label>
+              <input
+                type="password"
+                name="passwordConfirm"
+                value={formData.passwordConfirm}
+                onChange={handleChange}
+                required={!isLogin}
+              />
+            </div>
+          )}
           <button type="submit" className="submit-btn">
             {isLogin ? 'Войти' : 'Зарегистрироваться'}
           </button>

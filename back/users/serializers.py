@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Profile, TrainingBooking, WORKOUT_SCHEDULE
+import re
+from .models import Profile, TrainingBooking, PurchaseHistory, WORKOUT_SCHEDULE
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -62,14 +63,31 @@ class ProfileUpdateSerializer(serializers.Serializer):
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    password_confirm = serializers.CharField(write_only=True)
     email = serializers.EmailField(required=False, allow_blank=True)
+    phone = serializers.CharField(required=True, allow_blank=False, max_length=20, trim_whitespace=True)
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'password', 'email', 'first_name', 'last_name')
+        fields = ('id', 'username', 'password', 'password_confirm', 'email', 'first_name', 'last_name', 'phone')
         extra_kwargs = {'password': {'write_only': True}}
 
+    def validate_phone(self, value):
+        phone = re.sub(r'[^\d+]', '', value or '')
+        if not re.fullmatch(r'\+375\d{9}', phone):
+            raise serializers.ValidationError('Введите белорусский номер в формате +375XXXXXXXXX.')
+        return phone
+
+    def validate(self, attrs):
+        password = attrs.get('password')
+        password_confirm = attrs.get('password_confirm')
+        if password != password_confirm:
+            raise serializers.ValidationError({'password_confirm': 'Пароли не совпадают.'})
+        return attrs
+
     def create(self, validated_data):
+        validated_data.pop('password_confirm', None)
+        phone = validated_data.pop('phone')
         user = User.objects.create_user(
             username=validated_data['username'],
             email=validated_data.get('email', ''),
@@ -77,6 +95,9 @@ class RegisterSerializer(serializers.ModelSerializer):
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', '')
         )
+        profile, _ = Profile.objects.get_or_create(user=user)
+        profile.phone = phone
+        profile.save()
         return user
 
 class LogoutSerializer(serializers.Serializer):
@@ -102,8 +123,11 @@ class TrainingBookingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TrainingBooking
-        fields = ('id', 'workout_type', 'workout_type_display', 'date', 'time', 'trainer', 'comments', 'created_at')
-        read_only_fields = ('id', 'created_at')
+        fields = (
+            'id', 'workout_type', 'workout_type_display', 'date', 'time',
+            'trainer', 'comments', 'created_at', 'updated_at', 'admin_updated'
+        )
+        read_only_fields = ('id', 'created_at', 'updated_at')
 
     def validate(self, attrs):
         # Проверяем, что для выбранного типа тренировки эта дата и время разрешены расписанием
@@ -126,11 +150,40 @@ class TrainingBookingSerializer(serializers.ModelSerializer):
 class AdminBookingSerializer(serializers.ModelSerializer):
     workout_type_display = serializers.CharField(source='get_workout_type_display', read_only=True)
     user_username = serializers.CharField(source='user.username', read_only=True)
+    user_phone = serializers.SerializerMethodField()
+
+    def get_user_phone(self, obj):
+        profile = getattr(obj.user, 'profile', None)
+        return getattr(profile, 'phone', '') if profile else ''
 
     class Meta:
         model = TrainingBooking
         fields = (
             'id', 'user', 'user_username', 'workout_type', 'workout_type_display',
-            'date', 'time', 'trainer', 'comments', 'created_at',
+            'date', 'time', 'trainer', 'comments', 'created_at', 'updated_at', 'admin_updated', 'user_phone',
         )
         read_only_fields = ('id', 'created_at')
+
+
+class PurchaseHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PurchaseHistory
+        fields = (
+            'id',
+            'product_id',
+            'product_name',
+            'unit_price',
+            'quantity',
+            'total_price',
+            'full_name',
+            'phone',
+            'address',
+            'comment',
+            'created_at',
+        )
+        read_only_fields = ('id', 'created_at')
+
+    def validate_quantity(self, value):
+        if value < 1:
+            raise serializers.ValidationError('Количество должно быть не меньше 1.')
+        return value
