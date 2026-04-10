@@ -1,8 +1,13 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+from django.conf import settings
 from rest_framework_simplejwt.tokens import RefreshToken
 import re
 import datetime
+import os
+import uuid
 from .models import (
     Profile,
     TrainingBooking,
@@ -12,6 +17,28 @@ from .models import (
     WORKOUT_SCHEDULE,
     WORKOUT_TYPE_CHOICES,
 )
+
+
+def normalize_belarus_phone(value):
+    """Приводит номер к виду +375XXXXXXXXX (9 цифр после кода страны)."""
+    if value is None:
+        return None
+    raw = str(value).strip()
+    digits_only = re.sub(r'\D', '', raw)
+    if len(digits_only) == 12 and digits_only.startswith('375'):
+        normalized = '+' + digits_only
+    elif len(digits_only) == 11 and digits_only.startswith('80'):
+        normalized = '+375' + digits_only[2:]
+    elif len(digits_only) == 10 and digits_only.startswith('0'):
+        normalized = '+375' + digits_only[1:]
+    elif len(digits_only) == 9:
+        normalized = '+375' + digits_only
+    else:
+        stripped = re.sub(r'[^\d+]', '', raw)
+        normalized = stripped if re.fullmatch(r'\+375\d{9}', stripped) else None
+    if not normalized or not re.fullmatch(r'\+375\d{9}', normalized):
+        return None
+    return normalized
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -99,9 +126,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         extra_kwargs = {'password': {'write_only': True}}
 
     def validate_phone(self, value):
-        phone = re.sub(r'[^\d+]', '', value or '')
-        if not re.fullmatch(r'\+375\d{9}', phone):
-            raise serializers.ValidationError('Введите белорусский номер в формате +375XXXXXXXXX.')
+        phone = normalize_belarus_phone(value)
+        if not phone:
+            raise serializers.ValidationError(
+                'Номер Беларуси: после +375 должно быть 9 цифр. '
+                'Можно ввести +37529…, 37529…, 8029… или 029… без пробелов.'
+            )
         return phone
 
     def validate(self, attrs):
@@ -391,6 +421,8 @@ class PurchaseHistoryAdminSerializer(serializers.ModelSerializer):
 
 
 class ShopProductSerializer(serializers.ModelSerializer):
+    image_upload = serializers.ImageField(write_only=True, required=False, allow_null=True)
+
     class Meta:
         model = ShopProduct
         fields = (
@@ -401,8 +433,39 @@ class ShopProductSerializer(serializers.ModelSerializer):
             'composition',
             'price',
             'image',
+            'image_upload',
             'is_active',
             'created_at',
             'updated_at',
         )
         read_only_fields = ('id', 'created_at', 'updated_at')
+
+    def validate_image_upload(self, value):
+        if value and value.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError('Размер файла не больше 5 МБ.')
+        return value
+
+    def _apply_image_upload(self, validated_data):
+        upload = validated_data.pop('image_upload', None)
+        if not upload:
+            return
+        request = self.context.get('request')
+        ext = os.path.splitext(getattr(upload, 'name', '') or '')[1].lower()
+        if ext not in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
+            ext = '.jpg'
+        fname = f'{uuid.uuid4().hex}{ext}'
+        path = default_storage.save(f'shop_products/{fname}', ContentFile(upload.read()))
+        file_url = default_storage.url(path)
+        if request:
+            validated_data['image'] = request.build_absolute_uri(file_url)
+        else:
+            base = getattr(settings, 'BACKEND_PUBLIC_URL', '') or ''
+            validated_data['image'] = (base.rstrip('/') + file_url) if base else file_url
+
+    def create(self, validated_data):
+        self._apply_image_upload(validated_data)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        self._apply_image_upload(validated_data)
+        return super().update(instance, validated_data)

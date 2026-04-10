@@ -244,3 +244,23 @@
 .admin-bookings-btn_secondary:hover:not(:disabled) {
   background: #dee2e6;
 }
+
+.admin-shop-product-card--editing {
+  border-color: rgba(107, 239, 123, 0.55);
+  box-shadow: 0 0 0 2px rgba(107, 239, 123, 0.2);
+}
+
+.admin-shop-product-inline-form {
+  margin-top: 10px;
+}
+
+.admin-bookings-input_file {
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.admin-shop-product-file-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #495057;
+}

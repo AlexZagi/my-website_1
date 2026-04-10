@@ -89,6 +89,13 @@
   color: var(--brand-green);
 }
 
+.nutrition-shop__manager-hint {
+  margin: 14px 0 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.82);
+}
+
 .nutrition-shop__message {
   margin: 0 0 16px;
   padding: 12px 14px;
@@ -108,6 +115,20 @@
   list-style: none;
 }
 
+.nutrition-shop__empty-catalog {
+  grid-column: 1 / -1;
+  list-style: none;
+  margin: 0;
+  padding: 16px;
+  text-align: center;
+  color: var(--brand-text-muted);
+  font-size: 0.95rem;
+}
+
+.nutrition-shop__empty-catalog p {
+  margin: 0;
+}
+
 .nutrition-shop__card {
   display: flex;
   flex-direction: column;
@@ -116,6 +137,21 @@
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(107, 239, 123, 0.42);
   border-radius: 10px;
+}
+
+.nutrition-shop__card--openable {
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.nutrition-shop__card--openable:hover {
+  border-color: rgba(107, 239, 123, 0.75);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+}
+
+.nutrition-shop__card--openable:focus-visible {
+  outline: 2px solid #198754;
+  outline-offset: 2px;
 }
 
 .nutrition-shop__thumb {
@@ -136,6 +172,7 @@
 .nutrition-shop__card .nutrition-shop__desc,
 .nutrition-shop__card .nutrition-shop__price,
 .nutrition-shop__card .nutrition-shop__more,
+.nutrition-shop__card .nutrition-shop__edit-catalog--card,
 .nutrition-shop__card .nutrition-shop__actions {
   padding-left: 18px;
   padding-right: 18px;
@@ -195,6 +232,45 @@
 
 .nutrition-shop__more:hover {
   color: #146c43;
+}
+
+.nutrition-shop__more--hint {
+  cursor: inherit;
+  pointer-events: none;
+  text-decoration: none;
+  color: #2f503a;
+  opacity: 0.85;
+}
+
+.nutrition-shop__edit-catalog {
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(25, 135, 84, 0.55);
+  background: rgba(25, 135, 84, 0.12);
+  color: #146c43;
+  cursor: pointer;
+  text-align: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.nutrition-shop__edit-catalog:hover {
+  background: rgba(25, 135, 84, 0.2);
+}
+
+.nutrition-shop__edit-catalog--card {
+  margin-top: -6px;
+  margin-bottom: 12px;
+}
+
+.nutrition-product-modal__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .nutrition-shop__actions {
@@ -333,10 +409,4 @@
   font-size: 1.2rem;
   font-weight: 700;
   color: #e8e8e8;
-}
-
-.nutrition-product-modal__actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }

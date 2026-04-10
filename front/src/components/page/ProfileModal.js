@@ -5,15 +5,38 @@ const API_URL = 'http://127.0.0.1:8000/api/'; // URL вашего бэкенда
 
 const emptyForm = { username: '', email: '', password: '', passwordConfirm: '', name: '', phone: '' };
 
+/** Номер Беларуси → +375 и 9 цифр (как на бэкенде). */
+function normalizeBelarusPhone(raw) {
+  const digitsOnly = String(raw || '').replace(/\D/g, '');
+  if (digitsOnly.length === 12 && digitsOnly.startsWith('375')) {
+    return `+${digitsOnly}`;
+  }
+  if (digitsOnly.length === 11 && digitsOnly.startsWith('80')) {
+    return `+375${digitsOnly.slice(2)}`;
+  }
+  if (digitsOnly.length === 10 && digitsOnly.startsWith('0')) {
+    return `+375${digitsOnly.slice(1)}`;
+  }
+  if (digitsOnly.length === 9) {
+    return `+375${digitsOnly}`;
+  }
+  const stripped = String(raw || '').replace(/[^\d+]/g, '');
+  return /^\+375\d{9}$/.test(stripped) ? stripped : null;
+}
+
 const AuthModal = ({ isOpen, onClose }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState(emptyForm);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setFormData(emptyForm);
       setError('');
+      setShowPassword(false);
+      setShowPasswordConfirm(false);
     }
   }, [isOpen]);
 
@@ -30,10 +53,11 @@ const AuthModal = ({ isOpen, onClose }) => {
         setError('Пароли не совпадают.');
         return;
       }
-      const byPhoneRegex = /^\+375\d{9}$/;
-      const normalizedPhone = String(formData.phone || '').replace(/[^\d+]/g, '');
-      if (!byPhoneRegex.test(normalizedPhone)) {
-        setError('Введите белорусский номер в формате +375XXXXXXXXX.');
+      const normalizedPhone = normalizeBelarusPhone(formData.phone);
+      if (!normalizedPhone) {
+        setError(
+          'Укажите номер Беларуси: после кода страны 9 цифр. Например +375291234567, 375291234567, 80291234567 или 0291234567.'
+        );
         return;
       }
     }
@@ -53,7 +77,7 @@ const AuthModal = ({ isOpen, onClose }) => {
         password_confirm: formData.passwordConfirm,
         first_name: formData.name, // Используем name как first_name для регистрации
         last_name: '', // Можно добавить отдельное поле для фамилии
-        phone: String(formData.phone || '').replace(/[^\d+]/g, ''),
+        phone: normalizeBelarusPhone(formData.phone),
       };
     }
 
@@ -93,7 +117,22 @@ const AuthModal = ({ isOpen, onClose }) => {
         }
         onClose();
       } else {
-        setError(data.detail || JSON.stringify(data));
+        if (typeof data === 'object' && data !== null && !data.detail) {
+          const parts = [];
+          for (const [key, val] of Object.entries(data)) {
+            if (Array.isArray(val)) parts.push(`${key}: ${val.join(' ')}`);
+            else if (typeof val === 'object' && val !== null) {
+              for (const [k2, v2] of Object.entries(val)) {
+                parts.push(`${k2}: ${Array.isArray(v2) ? v2.join(' ') : v2}`);
+              }
+            } else parts.push(`${key}: ${val}`);
+          }
+          if (parts.length) {
+            setError(parts.join('. '));
+            return;
+          }
+        }
+        setError(data.detail || (typeof data === 'string' ? data : JSON.stringify(data)));
       }
     } catch (error) {
       console.error('Ошибка API:', error);
@@ -161,38 +200,67 @@ const AuthModal = ({ isOpen, onClose }) => {
           )}
           {!isLogin && (
             <div className="form-group">
-              <label>Телефон:</label>
+              <label>Телефон (Беларусь):</label>
               <input
                 type="tel"
                 name="phone"
                 value={formData.phone}
                 onChange={handleChange}
-                placeholder="+375291234567"
-                pattern="^\+375\d{9}$"
+                placeholder="+375 (29) 123-45-67 или 8 029 1234567"
+                autoComplete="tel"
                 required
               />
+              <p className="form-hint">
+                Допустимо: +375 и 9 цифр, или 375…, 80… (как с городского), 029… без кода страны.
+              </p>
             </div>
           )}
           <div className="form-group">
             <label>Пароль:</label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              required
-            />
+            <div className="password-field">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                autoComplete={isLogin ? 'current-password' : 'new-password'}
+                required
+                className="password-field__input"
+              />
+              <button
+                type="button"
+                className="password-field__toggle"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-pressed={showPassword}
+                aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+              >
+                {showPassword ? 'Скрыть' : 'Показать'}
+              </button>
+            </div>
           </div>
           {!isLogin && (
             <div className="form-group">
               <label>Повторите пароль:</label>
-              <input
-                type="password"
-                name="passwordConfirm"
-                value={formData.passwordConfirm}
-                onChange={handleChange}
-                required={!isLogin}
-              />
+              <div className="password-field">
+                <input
+                  type={showPasswordConfirm ? 'text' : 'password'}
+                  name="passwordConfirm"
+                  value={formData.passwordConfirm}
+                  onChange={handleChange}
+                  autoComplete="new-password"
+                  required={!isLogin}
+                  className="password-field__input"
+                />
+                <button
+                  type="button"
+                  className="password-field__toggle"
+                  onClick={() => setShowPasswordConfirm((v) => !v)}
+                  aria-pressed={showPasswordConfirm}
+                  aria-label={showPasswordConfirm ? 'Скрыть пароль' : 'Показать пароль'}
+                >
+                  {showPasswordConfirm ? 'Скрыть' : 'Показать'}
+                </button>
+              </div>
             </div>
           )}
           <button type="submit" className="submit-btn">

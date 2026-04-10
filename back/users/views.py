@@ -433,6 +433,7 @@ class ShopProductListView(APIView):
 
 class AdminShopProductListCreateView(APIView):
     permission_classes = ()
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def _has_manager_access(self, request):
         if request.user.is_superuser:
@@ -454,14 +455,15 @@ class AdminShopProductListCreateView(APIView):
     def post(self, request):
         if not self._has_manager_access(request):
             return self._forbidden_response()
-        serializer = ShopProductSerializer(data=request.data)
+        serializer = ShopProductSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         product = serializer.save()
-        return Response(ShopProductSerializer(product).data, status=status.HTTP_201_CREATED)
+        return Response(ShopProductSerializer(product, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
 class AdminShopProductDetailView(APIView):
     permission_classes = ()
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def _has_manager_access(self, request):
         if request.user.is_superuser:
@@ -481,10 +483,13 @@ class AdminShopProductDetailView(APIView):
             product = ShopProduct.objects.get(pk=pk)
         except ShopProduct.DoesNotExist:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = ShopProductSerializer(product, data=request.data, partial=True)
+        serializer = ShopProductSerializer(
+            product, data=request.data, partial=True, context={'request': request}
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(ShopProductSerializer(product).data)
+        product.refresh_from_db()
+        return Response(ShopProductSerializer(product, context={'request': request}).data)
 
     def delete(self, request, pk):
         if not self._has_manager_access(request):

@@ -19,6 +19,8 @@ function Header() {
   const [showSignUpModal, setShowSignUpModal] = useState(false);
   const [showProfileCabinetModal, setShowProfileCabinetModal] = useState(false);
   const [showAdminBookingsModal, setShowAdminBookingsModal] = useState(false);
+  const [adminModalOpenStore, setAdminModalOpenStore] = useState(false);
+  const [adminModalStoreProductId, setAdminModalStoreProductId] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isStaff, setIsStaff] = useState(false);
   const [isSuperuser, setIsSuperuser] = useState(false);
@@ -65,6 +67,22 @@ function Header() {
     const openAuthFromPage = () => setShowAuthModal(true);
     window.addEventListener('openAuthModal', openAuthFromPage);
     return () => window.removeEventListener('openAuthModal', openAuthFromPage);
+  }, []);
+
+  useEffect(() => {
+    const openAdminFromPage = (e) => {
+      const d = e.detail || {};
+      if (d.tab === 'store') {
+        setAdminModalOpenStore(true);
+        setAdminModalStoreProductId(d.productId != null ? d.productId : null);
+      } else {
+        setAdminModalOpenStore(false);
+        setAdminModalStoreProductId(null);
+      }
+      setShowAdminBookingsModal(true);
+    };
+    window.addEventListener('openAdminBookingsModal', openAdminFromPage);
+    return () => window.removeEventListener('openAdminBookingsModal', openAdminFromPage);
   }, []);
 
   useEffect(() => {
@@ -167,11 +185,15 @@ function Header() {
   };
 
   const handleOpenAdminBookingsModal = () => {
+    setAdminModalOpenStore(false);
+    setAdminModalStoreProductId(null);
     setShowAdminBookingsModal(true);
   };
 
   const handleCloseAdminBookingsModal = () => {
     setShowAdminBookingsModal(false);
+    setAdminModalOpenStore(false);
+    setAdminModalStoreProductId(null);
   };
 
   return (
@@ -192,8 +214,12 @@ function Header() {
                   <li><a href="/#contacts" className="header_link_button">Контакты</a></li>
                 </>
               )}
-              {(!isLoggedIn || (!isStaff && !isSuperuser)) && (
-                <li><Link to="/pitanie" className="header_link_button">Питание</Link></li>
+              {(!isLoggedIn || (!isStaff && !isSuperuser) || canManageStore) && (
+                <li>
+                  <Link to="/pitanie" className="header_link_button">
+                    {canManageStore && isLoggedIn ? 'Магазин' : 'Питание'}
+                  </Link>
+                </li>
               )}
               {isLoggedIn && (
                 <li>
@@ -233,7 +259,12 @@ function Header() {
       <ScheduleModal isOpen={showScheduleModal} onClose={handleCloseScheduleModal} />
       <SignUpModal isOpen={showSignUpModal} onClose={handleCloseSignUpModal} />
       <ProfileCabinetModal isOpen={showProfileCabinetModal} onClose={handleCloseProfileCabinetModal} />
-      <AdminBookingsModal isOpen={showAdminBookingsModal} onClose={handleCloseAdminBookingsModal} />
+      <AdminBookingsModal
+        isOpen={showAdminBookingsModal}
+        onClose={handleCloseAdminBookingsModal}
+        openStoreTab={adminModalOpenStore}
+        openStoreProductId={adminModalStoreProductId}
+      />
     </header>
   );
 }

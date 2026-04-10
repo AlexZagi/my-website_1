@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { SHOP_PRODUCTS } from '../../data/shopProducts';
 import './AdminBookingsModal.css';
 
 const API_URL = 'http://127.0.0.1:8000/api/';
@@ -68,7 +69,7 @@ const getAllowedDaysText = (workoutType) => {
   return `Для этой тренировки доступны дни: ${days.join(', ')}.`;
 };
 
-function AdminBookingsModal({ isOpen, onClose }) {
+function AdminBookingsModal({ isOpen, onClose, openStoreTab = false, openStoreProductId = null }) {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -101,6 +102,13 @@ function AdminBookingsModal({ isOpen, onClose }) {
     is_active: true,
   });
   const [productSaving, setProductSaving] = useState(false);
+  const [productDeleteLoadingId, setProductDeleteLoadingId] = useState(null);
+  const [productImageFile, setProductImageFile] = useState(null);
+  const [seedDemoLoading, setSeedDemoLoading] = useState(false);
+
+  const prevModalOpenRef = useRef(false);
+  const consumedOpenStoreProductIdRef = useRef(null);
+  const productsFetchInFlightRef = useRef(false);
 
   const token = localStorage.getItem('access_token');
   const isSuperuser = localStorage.getItem('is_superuser') === 'true';
@@ -196,6 +204,7 @@ function AdminBookingsModal({ isOpen, onClose }) {
       setProducts([]);
       return;
     }
+    productsFetchInFlightRef.current = true;
     setProductsLoading(true);
     setProductsError('');
     try {
@@ -214,6 +223,7 @@ function AdminBookingsModal({ isOpen, onClose }) {
       setProductsError(e.message || 'Ошибка загрузки товаров');
       setProducts([]);
     } finally {
+      productsFetchInFlightRef.current = false;
       setProductsLoading(false);
     }
   };
@@ -265,6 +275,9 @@ function AdminBookingsModal({ isOpen, onClose }) {
       setProductsLoading(false);
       setProductEditingId(null);
       setProductSaving(false);
+      setProductDeleteLoadingId(null);
+      setProductImageFile(null);
+      setSeedDemoLoading(false);
       setProductForm({
         name: '',
         summary: '',
@@ -274,6 +287,7 @@ function AdminBookingsModal({ isOpen, onClose }) {
         image: '',
         is_active: true,
       });
+      consumedOpenStoreProductIdRef.current = null;
       setProfiles([]);
       setProfilesError('');
       setProfilesLoading(false);
@@ -281,9 +295,21 @@ function AdminBookingsModal({ isOpen, onClose }) {
     }
   }, [isOpen, isSuperuser]);
 
+  useEffect(() => {
+    const wasOpen = prevModalOpenRef.current;
+    prevModalOpenRef.current = isOpen;
+    if (isOpen && !wasOpen && openStoreTab && canManageStore) {
+      setAdminTab('store');
+    }
+    if (!isOpen) {
+      consumedOpenStoreProductIdRef.current = null;
+    }
+  }, [isOpen, openStoreTab, canManageStore]);
+
   const startProductCreate = () => {
     setProductEditingId('new');
     setProductsError('');
+    setProductImageFile(null);
     setProductForm({
       name: '',
       summary: '',
@@ -298,6 +324,7 @@ function AdminBookingsModal({ isOpen, onClose }) {
   const startProductEdit = (p) => {
     setProductEditingId(p.id);
     setProductsError('');
+    setProductImageFile(null);
     setProductForm({
       name: p.name || '',
       summary: p.summary || '',
@@ -309,9 +336,71 @@ function AdminBookingsModal({ isOpen, onClose }) {
     });
   };
 
+  useEffect(() => {
+    if (!isOpen || openStoreProductId == null || !canManageStore || adminTab !== 'store') return;
+    if (productsFetchInFlightRef.current || productsLoading) return;
+    const key = String(openStoreProductId);
+    if (consumedOpenStoreProductIdRef.current === key) return;
+    const p = products.find((x) => x.id === openStoreProductId);
+    if (p) {
+      consumedOpenStoreProductIdRef.current = key;
+      setProductEditingId(p.id);
+      setProductsError('');
+      setProductForm({
+        name: p.name || '',
+        summary: p.summary || '',
+        detail: p.detail || '',
+        composition: p.composition || '',
+        price: p.price ?? '',
+        image: p.image || '',
+        is_active: p.is_active !== false,
+      });
+      return;
+    }
+    consumedOpenStoreProductIdRef.current = key;
+  }, [isOpen, openStoreProductId, canManageStore, adminTab, products, productsLoading]);
+
   const cancelProductEdit = () => {
     setProductEditingId(null);
     setProductSaving(false);
+    setProductImageFile(null);
+  };
+
+  const seedDemoCatalog = async () => {
+    if (!token || !canManageStore || products.length > 0) return;
+    setSeedDemoLoading(true);
+    setProductsError('');
+    try {
+      for (const p of SHOP_PRODUCTS) {
+        const payload = {
+          name: p.name,
+          summary: p.summary || '',
+          detail: p.detail || '',
+          composition: p.composition || '',
+          price: p.price,
+          image: typeof p.image === 'string' ? p.image : '',
+          is_active: true,
+        };
+        const res = await fetch(`${API_URL}users/admin/shop-products/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || `Не удалось добавить «${p.name}»`);
+        }
+      }
+      await fetchProducts();
+      window.dispatchEvent(new CustomEvent('shopCatalogUpdated'));
+    } catch (e) {
+      setProductsError(e.message || 'Ошибка загрузки демо-каталога');
+    } finally {
+      setSeedDemoLoading(false);
+    }
   };
 
   const handleProductFormChange = (e) => {
@@ -346,17 +435,44 @@ function AdminBookingsModal({ isOpen, onClose }) {
       if (!payload.name) throw new Error('Введите название товара.');
       if (!Number.isFinite(payload.price) || payload.price < 0) throw new Error('Некорректная цена.');
 
-      const res = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
+      const useMultipart = !!productImageFile;
+      let res;
+      if (useMultipart) {
+        const fd = new FormData();
+        fd.append('name', payload.name);
+        fd.append('summary', payload.summary);
+        fd.append('detail', payload.detail);
+        fd.append('composition', payload.composition);
+        fd.append('price', String(payload.price));
+        fd.append('is_active', payload.is_active ? 'true' : 'false');
+        fd.append('image', payload.image || '');
+        fd.append('image_upload', productImageFile);
+        res = await fetch(url, {
+          method,
+          headers: { Authorization: `Bearer ${token}` },
+          body: fd,
+        });
+      } else {
+        res = await fetch(url, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        });
+      }
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || 'Не удалось сохранить товар');
+        const parts = [];
+        if (errData.detail) parts.push(typeof errData.detail === 'string' ? errData.detail : JSON.stringify(errData.detail));
+        for (const [k, v] of Object.entries(errData)) {
+          if (k === 'detail') continue;
+          if (Array.isArray(v)) parts.push(`${k}: ${v.join(' ')}`);
+          else if (v && typeof v === 'object') parts.push(`${k}: ${JSON.stringify(v)}`);
+          else parts.push(`${k}: ${v}`);
+        }
+        throw new Error(parts.length ? parts.join('. ') : 'Не удалось сохранить товар');
       }
       const saved = await res.json();
       setProducts((prev) => {
@@ -364,10 +480,35 @@ function AdminBookingsModal({ isOpen, onClose }) {
         return prev.map((x) => (x.id === saved.id ? saved : x));
       });
       setProductEditingId(null);
+      setProductImageFile(null);
+      window.dispatchEvent(new CustomEvent('shopCatalogUpdated'));
     } catch (e) {
       setProductsError(e.message || 'Ошибка сохранения товара');
     } finally {
       setProductSaving(false);
+    }
+  };
+
+  const deleteProduct = async (id) => {
+    if (!token || !canManageStore) return;
+    if (!window.confirm('Удалить этот товар? Карточка исчезнет из каталога.')) return;
+    setProductDeleteLoadingId(id);
+    setProductsError('');
+    try {
+      const res = await fetch(`${API_URL}users/admin/shop-products/${id}/`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!(res.ok || res.status === 404)) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Не удалось удалить товар');
+      }
+      setProducts((prev) => prev.filter((x) => x.id !== id));
+      setProductEditingId((prev) => (prev === id ? null : prev));
+    } catch (e) {
+      setProductsError(e.message || 'Ошибка удаления товара');
+    } finally {
+      setProductDeleteLoadingId(null);
     }
   };
 
@@ -470,6 +611,120 @@ function AdminBookingsModal({ isOpen, onClose }) {
   const allowedTimes = getAllowedTimes(editFormData.workout_type, editFormData.date);
   const availableTimes = allowedTimes.filter((t) => isSlotAvailable(t, editFormData.date, editingId));
   const daysHint = getAllowedDaysText(editFormData.workout_type);
+
+  const shopProductEditorForm = (
+    <div className="admin-bookings-edit admin-shop-product-inline-form">
+      <div className="admin-bookings-form-group">
+        <label>Название</label>
+        <input
+          type="text"
+          name="name"
+          value={productForm.name}
+          onChange={handleProductFormChange}
+          className="admin-bookings-input"
+          required
+        />
+      </div>
+      <div className="admin-bookings-form-group">
+        <label>Фото по ссылке (если не загружаете файл)</label>
+        <input
+          type="text"
+          name="image"
+          value={productForm.image}
+          onChange={handleProductFormChange}
+          className="admin-bookings-input"
+          placeholder="/img/icons/1.jpg или https://…"
+        />
+      </div>
+      <div className="admin-bookings-form-group">
+        <label>Фото с компьютера (JPG, PNG до 5 МБ — при сохранении заменит ссылку)</label>
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          className="admin-bookings-input admin-bookings-input_file"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            setProductImageFile(f || null);
+            e.target.value = '';
+          }}
+        />
+        {productImageFile && (
+          <p className="admin-shop-product-file-hint">Выбран файл: {productImageFile.name}</p>
+        )}
+      </div>
+      <div className="admin-bookings-form-group">
+        <label>Краткое описание (в списке магазина)</label>
+        <input
+          type="text"
+          name="summary"
+          value={productForm.summary}
+          onChange={handleProductFormChange}
+          className="admin-bookings-input"
+        />
+      </div>
+      <div className="admin-bookings-form-group">
+        <label>Подробное описание (в окне товара)</label>
+        <textarea
+          name="detail"
+          value={productForm.detail}
+          onChange={handleProductFormChange}
+          className="admin-bookings-input admin-bookings-input_textarea"
+          rows={3}
+        />
+      </div>
+      <div className="admin-bookings-form-group">
+        <label>Состав</label>
+        <input
+          type="text"
+          name="composition"
+          value={productForm.composition}
+          onChange={handleProductFormChange}
+          className="admin-bookings-input"
+        />
+      </div>
+      <div className="admin-bookings-form-group">
+        <label>Цена (BYN)</label>
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          name="price"
+          value={productForm.price}
+          onChange={handleProductFormChange}
+          className="admin-bookings-input"
+        />
+      </div>
+      <div className="admin-bookings-form-group">
+        <label style={{ display: 'inline-flex', gap: 10, alignItems: 'center' }}>
+          <input
+            type="checkbox"
+            name="is_active"
+            checked={!!productForm.is_active}
+            onChange={handleProductFormChange}
+          />
+          Активен (показывать в магазине)
+        </label>
+      </div>
+      <div className="admin-bookings-edit-actions">
+        <button
+          type="button"
+          className="admin-bookings-btn admin-bookings-btn_primary"
+          onClick={saveProduct}
+          disabled={productSaving}
+        >
+          {productSaving ? 'Сохранение...' : 'Сохранить товар'}
+        </button>
+        <button
+          type="button"
+          className="admin-bookings-btn admin-bookings-btn_secondary"
+          onClick={cancelProductEdit}
+          disabled={productSaving}
+        >
+          Отмена
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="admin-bookings-overlay">
@@ -666,132 +921,85 @@ function AdminBookingsModal({ isOpen, onClose }) {
               <div className="admin-bookings-loading">Загрузка товаров...</div>
             ) : (
               <>
-                <div className="admin-bookings-actions" style={{ justifyContent: 'flex-start' }}>
+                <div
+                  className="admin-bookings-actions"
+                  style={{ justifyContent: 'flex-start', flexWrap: 'wrap', gap: 8 }}
+                >
                   <button
                     type="button"
                     className="admin-bookings-action-btn admin-bookings-action-btn_edit"
                     onClick={startProductCreate}
+                    disabled={!!productEditingId}
                   >
                     Добавить товар
                   </button>
+                  {products.length === 0 && (
+                    <button
+                      type="button"
+                      className="admin-bookings-btn admin-bookings-btn_secondary"
+                      onClick={seedDemoCatalog}
+                      disabled={seedDemoLoading || !!productEditingId}
+                    >
+                      {seedDemoLoading ? 'Загрузка…' : 'Заполнить демо-каталог с сайта'}
+                    </button>
+                  )}
                 </div>
 
-                {productEditingId && (
-                  <div className="admin-bookings-edit">
-                    <div className="admin-bookings-form-group">
-                      <label>Название</label>
-                      <input
-                        type="text"
-                        name="name"
-                        value={productForm.name}
-                        onChange={handleProductFormChange}
-                        className="admin-bookings-input"
-                        required
-                      />
-                    </div>
-                    <div className="admin-bookings-form-group">
-                      <label>Короткое описание (на карточке)</label>
-                      <input
-                        type="text"
-                        name="summary"
-                        value={productForm.summary}
-                        onChange={handleProductFormChange}
-                        className="admin-bookings-input"
-                      />
-                    </div>
-                    <div className="admin-bookings-form-group">
-                      <label>Подробное описание (в модалке)</label>
-                      <textarea
-                        name="detail"
-                        value={productForm.detail}
-                        onChange={handleProductFormChange}
-                        className="admin-bookings-input admin-bookings-input_textarea"
-                        rows={3}
-                      />
-                    </div>
-                    <div className="admin-bookings-form-group">
-                      <label>Состав</label>
-                      <input
-                        type="text"
-                        name="composition"
-                        value={productForm.composition}
-                        onChange={handleProductFormChange}
-                        className="admin-bookings-input"
-                      />
-                    </div>
-                    <div className="admin-bookings-form-group">
-                      <label>Цена (BYN)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        name="price"
-                        value={productForm.price}
-                        onChange={handleProductFormChange}
-                        className="admin-bookings-input"
-                      />
-                    </div>
-                    <div className="admin-bookings-form-group">
-                      <label>Картинка (URL или путь, например `/img/icons/1.jpg`)</label>
-                      <input
-                        type="text"
-                        name="image"
-                        value={productForm.image}
-                        onChange={handleProductFormChange}
-                        className="admin-bookings-input"
-                      />
-                    </div>
-                    <div className="admin-bookings-form-group">
-                      <label style={{ display: 'inline-flex', gap: 10, alignItems: 'center' }}>
-                        <input
-                          type="checkbox"
-                          name="is_active"
-                          checked={!!productForm.is_active}
-                          onChange={handleProductFormChange}
-                        />
-                        Активен (показывать в магазине)
-                      </label>
-                    </div>
-                    <div className="admin-bookings-edit-actions">
-                      <button
-                        type="button"
-                        className="admin-bookings-btn admin-bookings-btn_primary"
-                        onClick={saveProduct}
-                        disabled={productSaving}
-                      >
-                        {productSaving ? 'Сохранение...' : 'Сохранить товар'}
-                      </button>
-                      <button
-                        type="button"
-                        className="admin-bookings-btn admin-bookings-btn_secondary"
-                        onClick={cancelProductEdit}
-                        disabled={productSaving}
-                      >
-                        Отмена
-                      </button>
-                    </div>
+                {productEditingId === 'new' && (
+                  <div className="admin-bookings-item admin-shop-product-card admin-shop-product-card--editing">
+                    <span className="admin-bookings-type">Новый товар</span>
+                    {shopProductEditorForm}
                   </div>
                 )}
 
-                {products.length === 0 ? (
-                  <p className="admin-bookings-empty">Товаров пока нет. Нажмите «Добавить товар».</p>
-                ) : (
+                {products.length === 0 && productEditingId !== 'new' && (
+                  <p className="admin-bookings-empty">
+                    На сервере нет товаров — в магазине у посетителей могли показываться только демо-карточки без
+                    связи с каталогом. Нажмите «Заполнить демо-каталог с сайта», чтобы перенести их в базу и
+                    включить редактирование, либо создайте товар вручную.
+                  </p>
+                )}
+                {products.length > 0 && (
                   <ul className="admin-bookings-list">
                     {products.map((p) => (
-                      <li key={`product-${p.id}`} className="admin-bookings-item">
-                        <span className="admin-bookings-type">{p.name}</span>
-                        <span className="admin-bookings-datetime">
-                          Цена: {Number(p.price || 0).toLocaleString('ru-RU')} BYN • {p.is_active ? 'Активен' : 'Скрыт'}
-                        </span>
-                        <div className="admin-bookings-actions">
-                          <button
-                            type="button"
-                            className="admin-bookings-action-btn admin-bookings-action-btn_edit"
-                            onClick={() => startProductEdit(p)}
-                          >
-                            Изменить
-                          </button>
-                        </div>
+                      <li
+                        key={`product-${p.id}`}
+                        className={`admin-bookings-item admin-shop-product-card${
+                          productEditingId === p.id ? ' admin-shop-product-card--editing' : ''
+                        }`}
+                      >
+                        {productEditingId === p.id ? (
+                          <>
+                            <span className="admin-bookings-type">Редактирование: {p.name}</span>
+                            {shopProductEditorForm}
+                          </>
+                        ) : (
+                          <>
+                            <span className="admin-bookings-type">{p.name}</span>
+                            <span className="admin-bookings-datetime">
+                              Цена: {Number(p.price || 0).toLocaleString('ru-RU')} BYN •{' '}
+                              {p.is_active ? 'Активен' : 'Скрыт'}
+                            </span>
+                            <div className="admin-bookings-actions">
+                              <button
+                                type="button"
+                                className="admin-bookings-action-btn admin-bookings-action-btn_edit"
+                                onClick={() => startProductEdit(p)}
+                                disabled={!!productEditingId}
+                              >
+                                Изменить
+                              </button>
+                              <button
+                                type="button"
+                                className="admin-bookings-action-btn admin-bookings-action-btn_delete"
+                                onClick={() => deleteProduct(p.id)}
+                                disabled={productDeleteLoadingId === p.id || !!productEditingId}
+                              >
+                                {productDeleteLoadingId === p.id ? 'Удаление...' : 'Удалить'}
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </li>
                     ))}
                   </ul>

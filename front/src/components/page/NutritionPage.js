@@ -6,7 +6,17 @@ import './NutritionPage.css';
 const API_URL = 'http://127.0.0.1:8000/api/';
 const CURRENCY = 'BYN';
 
-const ProductDetailModal = ({ product, isLoggedIn, isInOrders, onClose, onAddToOrders, onOpenAuth }) => {
+const ProductDetailModal = ({
+  product,
+  isLoggedIn,
+  isInOrders,
+  onClose,
+  onAddToOrders,
+  onOpenAuth,
+  canManageStore,
+  onEditProductInAdmin,
+  isShopManager,
+}) => {
   if (!product) return null;
 
   const handleOverlayClick = (e) => {
@@ -37,24 +47,40 @@ const ProductDetailModal = ({ product, isLoggedIn, isInOrders, onClose, onAddToO
         {product.composition && <p className="nutrition-product-modal__composition">Состав: {product.composition}</p>}
         <p className="nutrition-product-modal__price">{product.price.toLocaleString('ru-RU')} {CURRENCY}</p>
         <div className="nutrition-product-modal__actions">
-          {isLoggedIn ? (
-            isInOrders ? (
-              <button type="button" className="nutrition-shop__buy nutrition-shop__buy--added" disabled>
-                В моих заказах
-              </button>
-            ) : (
-              <button type="button" className="nutrition-shop__buy" onClick={() => onAddToOrders(product)}>
-                В мои заказы
-              </button>
-            )
-          ) : (
+          {canManageStore && (
+            <button
+              type="button"
+              className="nutrition-shop__edit-catalog"
+              onClick={() => {
+                onEditProductInAdmin(product);
+                onClose();
+              }}
+            >
+              Редактировать товар
+            </button>
+          )}
+          {!isShopManager && (
             <>
-              <button type="button" className="nutrition-shop__buy nutrition-shop__buy--locked" disabled>
-                В мои заказы
-              </button>
-              <button type="button" className="nutrition-shop__login" onClick={onOpenAuth}>
-                Войти, чтобы добавить в заказы
-              </button>
+              {isLoggedIn ? (
+                isInOrders ? (
+                  <button type="button" className="nutrition-shop__buy nutrition-shop__buy--added" disabled>
+                    В моих заказах
+                  </button>
+                ) : (
+                  <button type="button" className="nutrition-shop__buy" onClick={() => onAddToOrders(product)}>
+                    В мои заказы
+                  </button>
+                )
+              ) : (
+                <>
+                  <button type="button" className="nutrition-shop__buy nutrition-shop__buy--locked" disabled>
+                    В мои заказы
+                  </button>
+                  <button type="button" className="nutrition-shop__login" onClick={onOpenAuth}>
+                    Войти, чтобы добавить в заказы
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
@@ -65,6 +91,9 @@ const ProductDetailModal = ({ product, isLoggedIn, isInOrders, onClose, onAddToO
 
 const NutritionPage = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem('access_token'));
+  const [canManageStore, setCanManageStore] = useState(
+    () => localStorage.getItem('can_manage_store') === 'true'
+  );
   const [shopMessage, setShopMessage] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [shopOrders, setShopOrders] = useState(() => loadOrders());
@@ -72,6 +101,7 @@ const NutritionPage = () => {
 
   const syncAuth = useCallback(() => {
     setIsLoggedIn(!!localStorage.getItem('access_token'));
+    setCanManageStore(localStorage.getItem('can_manage_store') === 'true');
   }, []);
 
   const refreshShopOrders = useCallback(() => {
@@ -100,32 +130,35 @@ const NutritionPage = () => {
     return () => window.removeEventListener('shopOrdersUpdated', onShopOrdersUpdated);
   }, [refreshShopOrders]);
 
-  useEffect(() => {
-    let isMounted = true;
-    const loadProducts = async () => {
-      try {
-        const res = await fetch(`${API_URL}users/shop-products/`);
-        if (!res.ok) throw new Error('bad_response');
-        const data = await res.json();
-        if (!isMounted) return;
-        if (Array.isArray(data) && data.length) {
-          setProducts(data.map((p) => ({
+  const loadProducts = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}users/shop-products/`);
+      if (!res.ok) throw new Error('bad_response');
+      const data = await res.json();
+      if (Array.isArray(data) && data.length) {
+        setProducts(
+          data.map((p) => ({
             ...p,
-            // normalize types expected by UI
             price: typeof p.price === 'string' ? Number(p.price) : p.price,
-          })));
-        } else {
-          setProducts(SHOP_PRODUCTS);
-        }
-      } catch {
-        if (isMounted) setProducts(SHOP_PRODUCTS);
+          }))
+        );
+      } else {
+        setProducts(canManageStore ? [] : SHOP_PRODUCTS);
       }
-    };
+    } catch {
+      setProducts(canManageStore ? [] : SHOP_PRODUCTS);
+    }
+  }, [canManageStore]);
+
+  useEffect(() => {
     loadProducts();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  }, [loadProducts]);
+
+  useEffect(() => {
+    const onCatalogUpdated = () => loadProducts();
+    window.addEventListener('shopCatalogUpdated', onCatalogUpdated);
+    return () => window.removeEventListener('shopCatalogUpdated', onCatalogUpdated);
+  }, [loadProducts]);
 
   useEffect(() => {
     if (!selectedProduct) return undefined;
@@ -143,6 +176,15 @@ const NutritionPage = () => {
 
   const openAuthModal = () => {
     window.dispatchEvent(new Event('openAuthModal'));
+  };
+
+  const openProductInAdmin = (product) => {
+    if (!product || product.id == null) return;
+    window.dispatchEvent(
+      new CustomEvent('openAdminBookingsModal', {
+        detail: { tab: 'store', productId: product.id },
+      })
+    );
   };
 
   const handleAddToOrders = (product) => {
@@ -187,49 +229,90 @@ const NutritionPage = () => {
                 Добавлять товары в заказы могут только авторизованные пользователи. Войдите в аккаунт.
               </p>
             )}
+            {canManageStore && isLoggedIn && (
+              <p className="nutrition-shop__manager-hint">
+                Редактирование и заказы: вкладка «Магазин» в админ-панели. Заказы как у клиента для менеджера недоступны.
+                Если каталог на сервере пуст, в админке нажмите «Заполнить демо-каталог с сайта».
+              </p>
+            )}
           </div>
 
-          {shopMessage && (
+          {shopMessage && !(canManageStore && isLoggedIn) && (
             <p className="nutrition-shop__message" role="status">
               {shopMessage}
             </p>
           )}
 
+          {canManageStore && isLoggedIn && products.length === 0 && (
+            <p className="nutrition-shop__message" role="status">
+              Каталог на сервере пуст. Откройте «Админ-панель» → «Магазин» → «Заполнить демо-каталог с сайта», затем
+              обновите страницу при необходимости.
+            </p>
+          )}
+
           <ul className="nutrition-shop__grid">
+            {products.length === 0 && (
+              <li className="nutrition-shop__empty-catalog">
+                <p>Пока нет позиций в каталоге на сервере.</p>
+              </li>
+            )}
             {products.map((p) => {
               const inOrders = orderProductIds.has(p.id);
               return (
-                <li key={p.id} className="nutrition-shop__card">
+                <li
+                  key={p.id}
+                  className="nutrition-shop__card nutrition-shop__card--openable"
+                  tabIndex={0}
+                  aria-label={`${p.name}, открыть описание`}
+                  onClick={() => openDetails(p)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    if (e.target !== e.currentTarget) return;
+                    e.preventDefault();
+                    openDetails(p);
+                  }}
+                >
                   <div className="nutrition-shop__thumb">
-                    <img src={p.image} alt={p.name} className="nutrition-shop__thumb-img" />
+                    <img src={p.image} alt="" className="nutrition-shop__thumb-img" />
                   </div>
                   <h3 className="nutrition-shop__name">{p.name}</h3>
                   <p className="nutrition-shop__desc">{p.summary}</p>
                   {p.composition && <p className="nutrition-shop__composition">Состав: {p.composition}</p>}
                   <p className="nutrition-shop__price">{p.price.toLocaleString('ru-RU')} {CURRENCY}</p>
-                  <button type="button" className="nutrition-shop__more" onClick={() => openDetails(p)}>
-                    Подробнее
-                  </button>
-                  <div className="nutrition-shop__actions">
-                    {isLoggedIn ? (
-                      <button
-                        type="button"
-                        className={`nutrition-shop__buy ${inOrders ? 'nutrition-shop__buy--added' : ''}`}
-                        onClick={() => !inOrders && handleAddToOrders(p)}
-                        disabled={inOrders}
-                      >
-                        {inOrders ? 'В моих заказах' : 'В мои заказы'}
-                      </button>
-                    ) : (
-                      <>
-                        <button type="button" className="nutrition-shop__buy nutrition-shop__buy--locked" disabled>
-                          В мои заказы
+                  <span className="nutrition-shop__more nutrition-shop__more--hint">Подробнее</span>
+                  {canManageStore && isLoggedIn && (
+                    <button
+                      type="button"
+                      className="nutrition-shop__edit-catalog nutrition-shop__edit-catalog--card"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openProductInAdmin(p);
+                      }}
+                    >
+                      Редактировать товар
+                    </button>
+                  )}
+                  <div className="nutrition-shop__actions" onClick={(e) => e.stopPropagation()}>
+                    {!(canManageStore && isLoggedIn) &&
+                      (isLoggedIn ? (
+                        <button
+                          type="button"
+                          className={`nutrition-shop__buy ${inOrders ? 'nutrition-shop__buy--added' : ''}`}
+                          onClick={() => !inOrders && handleAddToOrders(p)}
+                          disabled={inOrders}
+                        >
+                          {inOrders ? 'В моих заказах' : 'В мои заказы'}
                         </button>
-                        <button type="button" className="nutrition-shop__login" onClick={openAuthModal}>
-                          Войти, чтобы добавить в заказы
-                        </button>
-                      </>
-                    )}
+                      ) : (
+                        <>
+                          <button type="button" className="nutrition-shop__buy nutrition-shop__buy--locked" disabled>
+                            В мои заказы
+                          </button>
+                          <button type="button" className="nutrition-shop__login" onClick={openAuthModal}>
+                            Войти, чтобы добавить в заказы
+                          </button>
+                        </>
+                      ))}
                   </div>
                 </li>
               );
@@ -270,6 +353,9 @@ const NutritionPage = () => {
         onClose={() => setSelectedProduct(null)}
         onAddToOrders={handleAddToOrders}
         onOpenAuth={openAuthModal}
+        canManageStore={canManageStore && isLoggedIn}
+        isShopManager={canManageStore && isLoggedIn}
+        onEditProductInAdmin={openProductInAdmin}
       />
     </div>
   );

@@ -191,7 +191,7 @@ class ShopProduct(models.Model):
     detail = models.TextField(blank=True)
     composition = models.CharField(max_length=500, blank=True)
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    image = models.CharField(max_length=500, blank=True)  # URL or static path (e.g. /img/icons/1.jpg)
+    image = models.CharField(max_length=2048, blank=True)  # URL or static path (e.g. /img/icons/1.jpg)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
