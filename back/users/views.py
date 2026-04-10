@@ -2,11 +2,14 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from .models import Profile, TrainingBooking, PurchaseHistory
+from .models import Profile, TrainingBooking, PurchaseHistory, PurchaseStatusHistory, TrainingBookingUpdate, ShopProduct
 from .serializers import (
     RegisterSerializer, LogoutSerializer, ProfileSerializer, ProfileUpdateSerializer,
     TrainingBookingSerializer, AdminBookingSerializer, PurchaseHistorySerializer, PurchaseHistoryAdminSerializer,
+    TrainingBookingUpdateSerializer, AdminProfileSerializer, ShopProductSerializer,
 )
+
+from django.utils import timezone
 
 class RegisterAPI(generics.GenericAPIView):
     serializer_class = RegisterSerializer
@@ -100,25 +103,75 @@ class TrainingBookingDetailView(APIView):
 
 
 class AdminBookingListDetailView(APIView):
-    permission_classes = (permissions.IsAdminUser,)
+    permission_classes = ()
+
+    def _has_trainer_access(self, request):
+        if request.user.is_superuser:
+            return True
+        if not request.user.is_staff:
+            return False
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        return profile.role == Profile.ROLE_TRAINER
+
+    def _forbidden_response(self):
+        return Response({'detail': 'Доступ разрешён только роли "Тренер".'}, status=status.HTTP_403_FORBIDDEN)
 
     def get(self, request):
+        if not self._has_trainer_access(request):
+            return self._forbidden_response()
         bookings = TrainingBooking.objects.select_related('user', 'user__profile').order_by('-date', '-time')
         serializer = AdminBookingSerializer(bookings, many=True)
         return Response(serializer.data)
 
 
 class AdminBookingDetailView(APIView):
-    permission_classes = (permissions.IsAdminUser,)
+    permission_classes = ()
+
+    def _has_trainer_access(self, request):
+        if request.user.is_superuser:
+            return True
+        if not request.user.is_staff:
+            return False
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        return profile.role == Profile.ROLE_TRAINER
+
+    def _forbidden_response(self):
+        return Response({'detail': 'Доступ разрешён только роли "Тренер".'}, status=status.HTTP_403_FORBIDDEN)
 
     def patch(self, request, pk):
+        if not self._has_trainer_access(request):
+            return self._forbidden_response()
         try:
             booking = TrainingBooking.objects.get(pk=pk)
         except TrainingBooking.DoesNotExist:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        old_values = {
+            'workout_type': booking.workout_type,
+            'date': booking.date,
+            'time': booking.time,
+            'trainer': booking.trainer,
+            'comments': booking.comments,
+        }
         serializer = TrainingBookingSerializer(booking, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save(admin_updated=True)
+
+        # Создаем уведомление пользователю о конкретных изменениях.
+        TrainingBookingUpdate.objects.create(
+            booking=booking,
+            decision=TrainingBookingUpdate.STATUS_PENDING,
+            old_workout_type=old_values['workout_type'],
+            old_date=old_values['date'],
+            old_time=old_values['time'],
+            old_trainer=old_values.get('trainer', ''),
+            old_comments=old_values.get('comments', ''),
+            new_workout_type=booking.workout_type,
+            new_date=booking.date,
+            new_time=booking.time,
+            new_trainer=booking.trainer,
+            new_comments=booking.comments,
+        )
+
         profile, _ = Profile.objects.get_or_create(user=booking.user)
         # Симуляция SMS-уведомления в консоли сервера.
         print(
@@ -131,6 +184,8 @@ class AdminBookingDetailView(APIView):
         return Response(AdminBookingSerializer(booking).data)
 
     def delete(self, request, pk):
+        if not self._has_trainer_access(request):
+            return self._forbidden_response()
         try:
             booking = TrainingBooking.objects.get(pk=pk)
         except TrainingBooking.DoesNotExist:
@@ -139,27 +194,177 @@ class AdminBookingDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class TrainingBookingUpdateListView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request):
+        updates = (
+            TrainingBookingUpdate.objects.select_related('booking')
+            .filter(booking__user=request.user)
+            .filter(decision=TrainingBookingUpdate.STATUS_PENDING)
+            .order_by('-created_at')
+        )
+        serializer = TrainingBookingUpdateSerializer(updates, many=True)
+        return Response(serializer.data)
+
+
+class TrainingBookingUpdateSeenView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def post(self, request):
+        now = timezone.now()
+        qs = TrainingBookingUpdate.objects.filter(
+            booking__user=request.user,
+            decision=TrainingBookingUpdate.STATUS_PENDING,
+            seen_at__isnull=True,
+        )
+        updated_count = qs.update(seen_at=now)
+        return Response({'updated': updated_count})
+
+
+class TrainingBookingUpdateRespondView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def patch(self, request, pk):
+        try:
+            update = TrainingBookingUpdate.objects.select_related('booking').get(pk=pk, booking__user=request.user)
+        except TrainingBookingUpdate.DoesNotExist:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        decision = request.data.get('decision') or request.data.get('status')
+        decision = (decision or '').lower()
+
+        if decision not in (TrainingBookingUpdate.STATUS_ACCEPTED, TrainingBookingUpdate.STATUS_REJECTED):
+            return Response({'detail': 'Некорректное решение. Используйте "accepted" или "rejected".'}, status=status.HTTP_400_BAD_REQUEST)
+
+        now = timezone.now()
+        booking = update.booking
+
+        if decision == TrainingBookingUpdate.STATUS_ACCEPTED:
+            update.decision = TrainingBookingUpdate.STATUS_ACCEPTED
+            update.responded_at = now
+            update.seen_at = update.seen_at or now
+            update.save()
+        else:
+            # Откатим запись к старым данным.
+            booking.workout_type = update.old_workout_type
+            booking.date = update.old_date
+            booking.time = update.old_time
+            booking.trainer = update.old_trainer
+            booking.comments = update.old_comments
+            booking.admin_updated = False
+            booking.save()
+
+            update.decision = TrainingBookingUpdate.STATUS_REJECTED
+            update.responded_at = now
+            update.seen_at = update.seen_at or now
+            update.save()
+
+        # Если есть еще непроверенные апдейты по этому booking - admin_updated остается True.
+        has_pending_other = TrainingBookingUpdate.objects.filter(
+            booking=booking,
+            decision=TrainingBookingUpdate.STATUS_PENDING,
+        ).exists()
+        booking.admin_updated = has_pending_other
+        booking.save(update_fields=['admin_updated'])
+
+        return Response(TrainingBookingUpdateSerializer(update).data)
+
+
+class TrainingBookingUpdateAlertsView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request):
+        has_unseen = TrainingBookingUpdate.objects.filter(
+            booking__user=request.user,
+            decision=TrainingBookingUpdate.STATUS_PENDING,
+            seen_at__isnull=True,
+        ).exists()
+        return Response({'has_unseen': has_unseen})
+
+
+class AdminProfileListView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request):
+        if not request.user.is_superuser:
+            return Response({'detail': 'Только superuser.'}, status=status.HTTP_403_FORBIDDEN)
+        profiles = (
+            Profile.objects.select_related('user')
+            .all()
+            .order_by('user__username')
+        )
+        serializer = AdminProfileSerializer(profiles, many=True)
+        return Response(serializer.data)
+
+
+class AdminProfileDetailView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def patch(self, request, pk):
+        if not request.user.is_superuser:
+            return Response({'detail': 'Только superuser.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            profile = Profile.objects.select_related('user').get(pk=pk)
+        except Profile.DoesNotExist:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = AdminProfileSerializer(profile, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(AdminProfileSerializer(profile).data)
+
+    def delete(self, request, pk):
+        if not request.user.is_superuser:
+            return Response({'detail': 'Только superuser.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            profile = Profile.objects.select_related('user').get(pk=pk)
+        except Profile.DoesNotExist:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if profile.user.is_superuser:
+            return Response({'detail': 'Нельзя удалить superuser.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Удаляем пользователя целиком (Profile удалится каскадом).
+        profile.user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class PurchaseHistoryListCreateView(APIView):
     permission_classes = (permissions.IsAuthenticated,)
 
     def get(self, request):
-        purchases = PurchaseHistory.objects.filter(user=request.user)
+        purchases = PurchaseHistory.objects.filter(user=request.user).prefetch_related('status_history')
         serializer = PurchaseHistorySerializer(purchases, many=True)
         return Response(serializer.data)
 
     def post(self, request):
         serializer = PurchaseHistorySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(user=request.user)
+        purchase = serializer.save(user=request.user)
+        PurchaseStatusHistory.objects.create(purchase=purchase, status='created')
+        PurchaseStatusHistory.objects.create(purchase=purchase, status='processing')
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class PurchaseHistoryAdminListView(APIView):
-    permission_classes = (permissions.IsAdminUser,)
+    permission_classes = ()
+
+    def _has_manager_access(self, request):
+        if request.user.is_superuser:
+            return True
+        if not request.user.is_staff:
+            return False
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        return profile.role == Profile.ROLE_MANAGER
+
+    def _forbidden_response(self):
+        return Response({'detail': 'Доступ разрешён только роли "Менеджер заказов".'}, status=status.HTTP_403_FORBIDDEN)
 
     def get(self, request):
+        if not self._has_manager_access(request):
+            return self._forbidden_response()
         purchases = (
             PurchaseHistory.objects.select_related('user', 'user__profile')
+            .prefetch_related('status_history')
             .all()
             .order_by('-created_at')
         )
@@ -168,9 +373,22 @@ class PurchaseHistoryAdminListView(APIView):
 
 
 class PurchaseHistoryAdminDetailView(APIView):
-    permission_classes = (permissions.IsAdminUser,)
+    permission_classes = ()
+
+    def _has_manager_access(self, request):
+        if request.user.is_superuser:
+            return True
+        if not request.user.is_staff:
+            return False
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        return profile.role == Profile.ROLE_MANAGER
+
+    def _forbidden_response(self):
+        return Response({'detail': 'Доступ разрешён только роли "Менеджер заказов".'}, status=status.HTTP_403_FORBIDDEN)
 
     def patch(self, request, pk):
+        if not self._has_manager_access(request):
+            return self._forbidden_response()
         try:
             purchase = PurchaseHistory.objects.select_related('user', 'user__profile').get(pk=pk)
         except PurchaseHistory.DoesNotExist:
@@ -180,6 +398,8 @@ class PurchaseHistoryAdminDetailView(APIView):
         serializer = PurchaseHistoryAdminSerializer(purchase, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        if prev_status != purchase.status:
+            PurchaseStatusHistory.objects.create(purchase=purchase, status=purchase.status)
 
         if prev_status != purchase.status and purchase.status == 'ready':
             profile = getattr(purchase.user, 'profile', None)
@@ -191,3 +411,87 @@ class PurchaseHistoryAdminDetailView(APIView):
             )
 
         return Response(PurchaseHistoryAdminSerializer(purchase).data)
+
+    def delete(self, request, pk):
+        if not self._has_manager_access(request):
+            return self._forbidden_response()
+        try:
+            purchase = PurchaseHistory.objects.get(pk=pk)
+        except PurchaseHistory.DoesNotExist:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        purchase.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ShopProductListView(APIView):
+    permission_classes = (permissions.AllowAny,)
+
+    def get(self, request):
+        products = ShopProduct.objects.filter(is_active=True).order_by('-updated_at', '-id')
+        return Response(ShopProductSerializer(products, many=True).data)
+
+
+class AdminShopProductListCreateView(APIView):
+    permission_classes = ()
+
+    def _has_manager_access(self, request):
+        if request.user.is_superuser:
+            return True
+        if not request.user.is_staff:
+            return False
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        return profile.role == Profile.ROLE_MANAGER
+
+    def _forbidden_response(self):
+        return Response({'detail': 'Доступ разрешён только роли "Менеджер заказов".'}, status=status.HTTP_403_FORBIDDEN)
+
+    def get(self, request):
+        if not self._has_manager_access(request):
+            return self._forbidden_response()
+        products = ShopProduct.objects.all().order_by('-updated_at', '-id')
+        return Response(ShopProductSerializer(products, many=True).data)
+
+    def post(self, request):
+        if not self._has_manager_access(request):
+            return self._forbidden_response()
+        serializer = ShopProductSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        product = serializer.save()
+        return Response(ShopProductSerializer(product).data, status=status.HTTP_201_CREATED)
+
+
+class AdminShopProductDetailView(APIView):
+    permission_classes = ()
+
+    def _has_manager_access(self, request):
+        if request.user.is_superuser:
+            return True
+        if not request.user.is_staff:
+            return False
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        return profile.role == Profile.ROLE_MANAGER
+
+    def _forbidden_response(self):
+        return Response({'detail': 'Доступ разрешён только роли "Менеджер заказов".'}, status=status.HTTP_403_FORBIDDEN)
+
+    def patch(self, request, pk):
+        if not self._has_manager_access(request):
+            return self._forbidden_response()
+        try:
+            product = ShopProduct.objects.get(pk=pk)
+        except ShopProduct.DoesNotExist:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ShopProductSerializer(product, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(ShopProductSerializer(product).data)
+
+    def delete(self, request, pk):
+        if not self._has_manager_access(request):
+            return self._forbidden_response()
+        try:
+            product = ShopProduct.objects.get(pk=pk)
+        except ShopProduct.DoesNotExist:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        product.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

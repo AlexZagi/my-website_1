@@ -1,9 +1,10 @@
 .footer {
-    background-color: #333;
-    color: white;
+    background-color: var(--brand-surface);
+    color: var(--brand-text);
     padding: 20px;
     width: 100%;
     text-align: center;
+    border-top: 1px solid var(--brand-border);
 }
 
 .footer-links {
@@ -17,6 +18,10 @@
 }
 
 .footer-links a {
-    color: white;
+    color: var(--brand-text);
     text-decoration: none;
+}
+
+.footer-links a:hover {
+    color: var(--brand-green);
 }

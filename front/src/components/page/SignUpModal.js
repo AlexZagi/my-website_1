@@ -1,19 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import './SignUpModal.css'; // Импорт CSS для модального окна записи
 
 const API_URL = 'http://127.0.0.1:8000/api/';
+const TRAINING_DURATION_MINUTES = 90;
 
 // Расписание должно совпадать с WORKOUT_SCHEDULE на бэкенде.
 // Ключи дней: 0 = понедельник, 6 = воскресенье (как в Python).
 const TRAINING_SCHEDULE = {
-  cardio: { 0: ['09:00','18:00'], 2: ['09:00','16:00'], 4: ['09:00','19:00'] },
-  strength: { 0: ['11:30','15:00'], 2: ['10:30','17:30'], 4: ['10:30','21:00'] },
-  yoga: { 0: ['12:00'], 2: ['12:00'], 4: ['12:00'] },
-  functional: { 0: ['13:30'], 2: ['13:30'], 4: ['13:30'] },
-  gymnastics: { 1: ['09:00'], 3: ['09:00'], 5: ['09:00'] },
-  pilates: { 1: ['10:30'], 3: ['10:30'], 5: ['10:30'] },
-  crossfit: { 1: ['12:00'], 3: ['12:00'], 5: ['12:00'] },
-  aqua: { 1: ['13:30'], 3: ['13:30'], 5: ['13:30'] },
+  cardio: { 0: ['09:00','10:30','12:00','15:00','16:30','18:00'], 2: ['09:00','10:30','12:00','15:30','17:00'], 4: ['09:00','10:30','12:00','14:30','16:00','17:30','19:00'] },
+  strength: { 0: ['09:30','11:30','13:30','15:00','16:30','18:00'], 2: ['10:30','12:00','13:30','15:00','17:30'], 4: ['10:30','12:00','13:30','15:00','16:30','18:00','19:30','21:00'] },
+  yoga: { 0: ['12:00','13:30','15:00','16:30'], 2: ['12:00','13:30','15:00','16:30'], 4: ['12:00','13:30','15:00','16:30'] },
+  functional: { 0: ['13:30','15:00','16:30'], 2: ['13:30','15:00','16:30'], 4: ['13:30','15:00','16:30'] },
+  gymnastics: { 1: ['09:00','10:30','12:00','13:30'], 3: ['09:00','10:30','12:00','13:30'], 5: ['09:00','10:30','12:00','13:30'] },
+  pilates: { 1: ['10:30','12:00','13:30','15:00'], 3: ['10:30','12:00','13:30','15:00'], 5: ['10:30','12:00','13:30','15:00'] },
+  crossfit: { 1: ['12:00','13:30','15:00','16:30'], 3: ['12:00','13:30','15:00','16:30'], 5: ['12:00','13:30','15:00','16:30'] },
+  aqua: { 1: ['13:30','15:00','16:30','18:00'], 3: ['13:30','15:00','16:30','18:00'], 5: ['13:30','15:00','16:30','18:00'] },
 };
 
 const WEEKDAY_NAMES = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
@@ -26,6 +27,16 @@ const jsDateToPythonWeekday = (dateStr) => {
   if (Number.isNaN(d.getTime())) return null;
   const jsDay = d.getDay(); // 0..6 (0 = Sunday)
   return (jsDay + 6) % 7; // 1->0 (Mon), ..., 0->6 (Sun)
+};
+
+const timeToMinutes = (timeStr) => {
+  if (!timeStr) return null;
+  const val = typeof timeStr === 'string' ? timeStr.slice(0, 5) : String(timeStr);
+  const [hh, mm] = val.split(':');
+  const h = Number(hh);
+  const m = Number(mm);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
 };
 
 const getAllowedTimes = (workoutType, dateStr) => {
@@ -60,6 +71,42 @@ const SignUpModal = ({ isOpen, onClose }) => {
   const [error, setError] = useState('');
 
   const token = localStorage.getItem('access_token');
+  const [myBookings, setMyBookings] = useState([]);
+
+  useEffect(() => {
+    if (!isOpen || !token) return;
+    let cancelled = false;
+    const fetchMyBookings = async () => {
+      try {
+        const res = await fetch(`${API_URL}users/training-bookings/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setMyBookings(Array.isArray(data) ? data : []);
+      } catch {
+        // ignore
+      }
+    };
+    fetchMyBookings();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, token]);
+
+  const isSlotFreeForMyBookings = (startTimeStr, dateStr) => {
+    if (!startTimeStr || !dateStr) return true;
+    const requestedStart = timeToMinutes(startTimeStr);
+    if (requestedStart === null) return false;
+    const requestedEnd = requestedStart + TRAINING_DURATION_MINUTES;
+    return !myBookings.some((b) => {
+      if (!b?.date || b.date !== dateStr) return false;
+      const existingStart = timeToMinutes(b.time);
+      if (existingStart === null) return false;
+      const existingEnd = existingStart + TRAINING_DURATION_MINUTES;
+      return requestedStart < existingEnd && requestedEnd > existingStart;
+    });
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -71,12 +118,13 @@ const SignUpModal = ({ isOpen, onClose }) => {
         name === 'workoutType' ? value : next.workoutType,
         name === 'date' ? value : next.date
       );
+      const filtered = allowed.filter((t) => isSlotFreeForMyBookings(t, name === 'date' ? value : next.date));
       // Сбрасываем время, если оно не входит в доступные слоты
-      if (!allowed.includes(next.time)) {
+      if (!filtered.includes(next.time)) {
         next.time = '';
       }
       // Если выбрана дата, но нет доступных слотов — показываем подсказку
-      if (next.workoutType && next.date && allowed.length === 0) {
+      if (next.workoutType && next.date && filtered.length === 0) {
         const daysText = getAllowedDaysText(next.workoutType);
         setError(`На выбранную дату эта тренировка не проводится. ${daysText}`.trim());
       } else {
@@ -97,9 +145,10 @@ const SignUpModal = ({ isOpen, onClose }) => {
     }
 
     const allowed = getAllowedTimes(formData.workoutType, formData.date);
-    if (!allowed.includes(formData.time)) {
+    const filtered = allowed.filter((t) => isSlotFreeForMyBookings(t, formData.date));
+    if (!filtered.includes(formData.time)) {
       const daysText = getAllowedDaysText(formData.workoutType);
-      setError(`Выберите время в соответствии с расписанием. ${daysText}`.trim());
+      setError(`Выберите доступное время. ${daysText}`.trim());
       return;
     }
 
@@ -142,6 +191,7 @@ const SignUpModal = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const allowedTimes = getAllowedTimes(formData.workoutType, formData.date);
+  const filteredAllowedTimes = allowedTimes.filter((t) => isSlotFreeForMyBookings(t, formData.date));
   const daysHint = getAllowedDaysText(formData.workoutType);
 
   return (
@@ -195,16 +245,16 @@ const SignUpModal = ({ isOpen, onClose }) => {
               value={formData.time}
               onChange={handleChange}
               required
-              disabled={!formData.workoutType || !formData.date || allowedTimes.length === 0}
+              disabled={!formData.workoutType || !formData.date || filteredAllowedTimes.length === 0}
             >
               <option value="">
                 {formData.workoutType && formData.date
-                  ? allowedTimes.length
+                  ? filteredAllowedTimes.length
                     ? 'Выберите время'
                     : 'В этот день время недоступно'
                   : 'Сначала выберите тренировку и дату'}
               </option>
-              {allowedTimes.map((t) => (
+              {filteredAllowedTimes.map((t) => (
                 <option key={t} value={t}>
                   {t}
                 </option>

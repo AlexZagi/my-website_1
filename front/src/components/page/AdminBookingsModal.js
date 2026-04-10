@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './AdminBookingsModal.css';
 
 const API_URL = 'http://127.0.0.1:8000/api/';
+const TRAINING_DURATION_MINUTES = 90;
 
 const WORKOUT_OPTIONS = [
   { value: 'cardio', label: 'Кардио-тренировки' },
@@ -16,14 +17,14 @@ const WORKOUT_OPTIONS = [
 
 // Должно совпадать с WORKOUT_SCHEDULE на бэкенде.
 const TRAINING_SCHEDULE = {
-  cardio: { 0: ['09:00', '18:00'], 2: ['09:00', '16:00'], 4: ['09:00', '19:00'] },
-  strength: { 0: ['11:30', '15:00'], 2: ['10:30', '17:30'], 4: ['10:30', '21:00'] },
-  yoga: { 0: ['12:00'], 2: ['12:00'], 4: ['12:00'] },
-  functional: { 0: ['13:30'], 2: ['13:30'], 4: ['13:30'] },
-  gymnastics: { 1: ['09:00'], 3: ['09:00'], 5: ['09:00'] },
-  pilates: { 1: ['10:30'], 3: ['10:30'], 5: ['10:30'] },
-  crossfit: { 1: ['12:00'], 3: ['12:00'], 5: ['12:00'] },
-  aqua: { 1: ['13:30'], 3: ['13:30'], 5: ['13:30'] },
+  cardio: { 0: ['09:00', '10:30', '12:00', '15:00', '16:30', '18:00'], 2: ['09:00', '10:30', '12:00', '15:30', '17:00'], 4: ['09:00', '10:30', '12:00', '14:30', '16:00', '17:30', '19:00'] },
+  strength: { 0: ['09:30', '11:30', '13:30', '15:00', '16:30', '18:00'], 2: ['10:30', '12:00', '13:30', '15:00', '17:30'], 4: ['10:30', '12:00', '13:30', '15:00', '16:30', '18:00', '19:30', '21:00'] },
+  yoga: { 0: ['12:00', '13:30', '15:00', '16:30'], 2: ['12:00', '13:30', '15:00', '16:30'], 4: ['12:00', '13:30', '15:00', '16:30'] },
+  functional: { 0: ['13:30', '15:00', '16:30'], 2: ['13:30', '15:00', '16:30'], 4: ['13:30', '15:00', '16:30'] },
+  gymnastics: { 1: ['09:00', '10:30', '12:00', '13:30'], 3: ['09:00', '10:30', '12:00', '13:30'], 5: ['09:00', '10:30', '12:00', '13:30'] },
+  pilates: { 1: ['10:30', '12:00', '13:30', '15:00'], 3: ['10:30', '12:00', '13:30', '15:00'], 5: ['10:30', '12:00', '13:30', '15:00'] },
+  crossfit: { 1: ['12:00', '13:30', '15:00', '16:30'], 3: ['12:00', '13:30', '15:00', '16:30'], 5: ['12:00', '13:30', '15:00', '16:30'] },
+  aqua: { 1: ['13:30', '15:00', '16:30', '18:00'], 3: ['13:30', '15:00', '16:30', '18:00'], 5: ['13:30', '15:00', '16:30', '18:00'] },
 };
 
 const WEEKDAY_NAMES = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
@@ -43,6 +44,16 @@ const getAllowedTimes = (workoutType, dateStr) => {
   if (pyWeekday === null) return [];
   const byDay = TRAINING_SCHEDULE[workoutType] || {};
   return byDay[pyWeekday] || [];
+};
+
+const timeToMinutes = (timeStr) => {
+  if (!timeStr) return null;
+  const val = typeof timeStr === 'string' ? timeStr.slice(0, 5) : String(timeStr);
+  const [hh, mm] = val.split(':');
+  const h = Number(hh);
+  const m = Number(mm);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
 };
 
 const getAllowedDaysText = (workoutType) => {
@@ -72,21 +83,63 @@ function AdminBookingsModal({ isOpen, onClose }) {
   const [editSaving, setEditSaving] = useState(false);
   const [deleteLoadingId, setDeleteLoadingId] = useState(null);
 
-  const [adminTab, setAdminTab] = useState('bookings'); // 'bookings' | 'store'
+  const [adminTab, setAdminTab] = useState('bookings'); // 'bookings' | 'store' | 'profiles'
   const [purchases, setPurchases] = useState([]);
   const [purchasesLoading, setPurchasesLoading] = useState(false);
   const [purchasesError, setPurchasesError] = useState('');
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [productsError, setProductsError] = useState('');
+  const [productEditingId, setProductEditingId] = useState(null);
+  const [productForm, setProductForm] = useState({
+    name: '',
+    summary: '',
+    detail: '',
+    composition: '',
+    price: '',
+    image: '',
+    is_active: true,
+  });
+  const [productSaving, setProductSaving] = useState(false);
 
   const token = localStorage.getItem('access_token');
+  const isSuperuser = localStorage.getItem('is_superuser') === 'true';
+  const canManageBookings = localStorage.getItem('can_manage_bookings') === 'true';
+  const canManageStore = localStorage.getItem('can_manage_store') === 'true';
+
+  const [profiles, setProfiles] = useState([]);
+  const [profilesLoading, setProfilesLoading] = useState(false);
+  const [profilesError, setProfilesError] = useState('');
+
+  const isSlotAvailable = (startTimeStr, dateStr, ignoreId) => {
+    if (!startTimeStr || !dateStr) return true;
+    const requestedStart = timeToMinutes(startTimeStr);
+    if (requestedStart === null) return false;
+    const requestedEnd = requestedStart + TRAINING_DURATION_MINUTES;
+
+    return !bookings.some((b) => {
+      if (!b?.date || b.date !== dateStr) return false;
+      if (ignoreId && b.id === ignoreId) return false;
+      const existingStart = timeToMinutes(b.time);
+      if (existingStart === null) return false;
+      const existingEnd = existingStart + TRAINING_DURATION_MINUTES;
+      return requestedStart < existingEnd && requestedEnd > existingStart;
+    });
+  };
 
   const PURCHASE_STATUS_LABELS = {
     processing: 'В обработке',
     ready: 'Готово к выдаче',
     delivered: 'Выдано',
+    cancelled: 'Отменён',
   };
 
   const fetchBookings = async () => {
     if (!token) return;
+    if (!canManageBookings) {
+      setBookings([]);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -111,6 +164,10 @@ function AdminBookingsModal({ isOpen, onClose }) {
 
   const fetchPurchases = async () => {
     if (!token) return;
+    if (!canManageStore) {
+      setPurchases([]);
+      return;
+    }
     setPurchasesLoading(true);
     setPurchasesError('');
     try {
@@ -133,10 +190,68 @@ function AdminBookingsModal({ isOpen, onClose }) {
     }
   };
 
+  const fetchProducts = async () => {
+    if (!token) return;
+    if (!canManageStore) {
+      setProducts([]);
+      return;
+    }
+    setProductsLoading(true);
+    setProductsError('');
+    try {
+      const res = await fetch(`${API_URL}users/admin/shop-products/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 403) {
+        setProductsError('Доступ запрещён. Только для менеджера заказов.');
+        setProducts([]);
+        return;
+      }
+      if (!res.ok) throw new Error('Не удалось загрузить товары');
+      const data = await res.json();
+      setProducts(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setProductsError(e.message || 'Ошибка загрузки товаров');
+      setProducts([]);
+    } finally {
+      setProductsLoading(false);
+    }
+  };
+
+  const fetchProfiles = async () => {
+    if (!token) return;
+    if (!isSuperuser) return;
+    setProfilesLoading(true);
+    setProfilesError('');
+    try {
+      const res = await fetch(`${API_URL}users/admin/profiles/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 403) {
+        setProfilesError('Доступ запрещён. Только для superuser.');
+        setProfiles([]);
+        return;
+      }
+      if (!res.ok) throw new Error('Не удалось загрузить профили');
+      const data = await res.json();
+      setProfiles(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setProfilesError(e.message || 'Ошибка загрузки профилей');
+      setProfiles([]);
+    } finally {
+      setProfilesLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (isOpen && token) {
       fetchBookings();
       fetchPurchases();
+      fetchProducts();
+      if (isSuperuser) fetchProfiles();
+      if (!canManageBookings && canManageStore) setAdminTab('store');
+      if (canManageBookings && !canManageStore) setAdminTab('bookings');
+      if (isSuperuser && adminTab === 'profiles') fetchProfiles();
     } else if (!isOpen) {
       setBookings([]);
       setError('');
@@ -145,9 +260,116 @@ function AdminBookingsModal({ isOpen, onClose }) {
       setPurchases([]);
       setPurchasesError('');
       setPurchasesLoading(false);
+      setProducts([]);
+      setProductsError('');
+      setProductsLoading(false);
+      setProductEditingId(null);
+      setProductSaving(false);
+      setProductForm({
+        name: '',
+        summary: '',
+        detail: '',
+        composition: '',
+        price: '',
+        image: '',
+        is_active: true,
+      });
+      setProfiles([]);
+      setProfilesError('');
+      setProfilesLoading(false);
       setAdminTab('bookings');
     }
-  }, [isOpen]);
+  }, [isOpen, isSuperuser]);
+
+  const startProductCreate = () => {
+    setProductEditingId('new');
+    setProductsError('');
+    setProductForm({
+      name: '',
+      summary: '',
+      detail: '',
+      composition: '',
+      price: '',
+      image: '',
+      is_active: true,
+    });
+  };
+
+  const startProductEdit = (p) => {
+    setProductEditingId(p.id);
+    setProductsError('');
+    setProductForm({
+      name: p.name || '',
+      summary: p.summary || '',
+      detail: p.detail || '',
+      composition: p.composition || '',
+      price: p.price ?? '',
+      image: p.image || '',
+      is_active: p.is_active !== false,
+    });
+  };
+
+  const cancelProductEdit = () => {
+    setProductEditingId(null);
+    setProductSaving(false);
+  };
+
+  const handleProductFormChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setProductForm((prev) => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value,
+    }));
+  };
+
+  const saveProduct = async () => {
+    if (!token) return;
+    if (!canManageStore) return;
+    if (!productEditingId) return;
+    setProductSaving(true);
+    setProductsError('');
+    try {
+      const isNew = productEditingId === 'new';
+      const url = isNew
+        ? `${API_URL}users/admin/shop-products/`
+        : `${API_URL}users/admin/shop-products/${productEditingId}/`;
+      const method = isNew ? 'POST' : 'PATCH';
+      const payload = {
+        name: String(productForm.name || '').trim(),
+        summary: String(productForm.summary || '').trim(),
+        detail: String(productForm.detail || '').trim(),
+        composition: String(productForm.composition || '').trim(),
+        price: productForm.price === '' ? 0 : Number(productForm.price),
+        image: String(productForm.image || '').trim(),
+        is_active: !!productForm.is_active,
+      };
+      if (!payload.name) throw new Error('Введите название товара.');
+      if (!Number.isFinite(payload.price) || payload.price < 0) throw new Error('Некорректная цена.');
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Не удалось сохранить товар');
+      }
+      const saved = await res.json();
+      setProducts((prev) => {
+        if (isNew) return [saved, ...prev];
+        return prev.map((x) => (x.id === saved.id ? saved : x));
+      });
+      setProductEditingId(null);
+    } catch (e) {
+      setProductsError(e.message || 'Ошибка сохранения товара');
+    } finally {
+      setProductSaving(false);
+    }
+  };
 
   const startEdit = (b) => {
     setEditingId(b.id);
@@ -174,7 +396,8 @@ function AdminBookingsModal({ isOpen, onClose }) {
           name === 'workout_type' ? value : next.workout_type,
           name === 'date' ? value : next.date
         );
-        if (!allowed.includes(next.time)) {
+        const available = allowed.filter((t) => isSlotAvailable(t, name === 'date' ? value : next.date, editingId));
+        if (next.time && !available.includes(next.time)) {
           next.time = '';
         }
       }
@@ -245,6 +468,7 @@ function AdminBookingsModal({ isOpen, onClose }) {
 
   if (!isOpen) return null;
   const allowedTimes = getAllowedTimes(editFormData.workout_type, editFormData.date);
+  const availableTimes = allowedTimes.filter((t) => isSlotAvailable(t, editFormData.date, editingId));
   const daysHint = getAllowedDaysText(editFormData.workout_type);
 
   return (
@@ -253,21 +477,38 @@ function AdminBookingsModal({ isOpen, onClose }) {
         <button type="button" className="admin-bookings-close" onClick={onClose}>×</button>
         <h2>Управление записями</h2>
         <div className="admin-bookings-tabs">
-          <button
-            type="button"
-            className={`admin-bookings-tab ${adminTab === 'bookings' ? 'admin-bookings-tab_active' : ''}`}
-            onClick={() => setAdminTab('bookings')}
-          >
-            Записи
-          </button>
-          <button
-            type="button"
-            className={`admin-bookings-tab ${adminTab === 'store' ? 'admin-bookings-tab_active' : ''}`}
-            onClick={() => setAdminTab('store')}
-          >
-            Магазин
-          </button>
+          {canManageBookings && (
+            <button
+              type="button"
+              className={`admin-bookings-tab ${adminTab === 'bookings' ? 'admin-bookings-tab_active' : ''}`}
+              onClick={() => setAdminTab('bookings')}
+            >
+              Записи
+            </button>
+          )}
+          {canManageStore && (
+            <button
+              type="button"
+              className={`admin-bookings-tab ${adminTab === 'store' ? 'admin-bookings-tab_active' : ''}`}
+              onClick={() => setAdminTab('store')}
+            >
+              Магазин
+            </button>
+          )}
+          {isSuperuser && (
+            <button
+              type="button"
+              className={`admin-bookings-tab ${adminTab === 'profiles' ? 'admin-bookings-tab_active' : ''}`}
+              onClick={() => setAdminTab('profiles')}
+            >
+              Профили
+            </button>
+          )}
         </div>
+
+        {!canManageBookings && !canManageStore && !isSuperuser && (
+          <p className="admin-bookings-error">Для вашего аккаунта не выданы права администратора панели.</p>
+        )}
 
         {adminTab === 'bookings' && (
           <>
@@ -325,16 +566,16 @@ function AdminBookingsModal({ isOpen, onClose }) {
                             onChange={handleEditFormChange}
                             className="admin-bookings-input"
                             required
-                            disabled={!editFormData.workout_type || !editFormData.date || allowedTimes.length === 0}
+                            disabled={!editFormData.workout_type || !editFormData.date || availableTimes.length === 0}
                           >
                             <option value="">
                               {editFormData.workout_type && editFormData.date
-                                ? allowedTimes.length
+                                ? availableTimes.length
                                   ? 'Выберите время'
                                   : 'В этот день время недоступно'
                                 : 'Сначала выберите тренировку и дату'}
                             </option>
-                            {allowedTimes.map((t) => (
+                            {availableTimes.map((t) => (
                               <option key={t} value={t}>
                                 {t}
                               </option>
@@ -419,6 +660,146 @@ function AdminBookingsModal({ isOpen, onClose }) {
 
         {adminTab === 'store' && (
           <>
+            <h3 className="admin-bookings-title">Товары (карточки магазина)</h3>
+            {productsError && <p className="admin-bookings-error">{productsError}</p>}
+            {productsLoading ? (
+              <div className="admin-bookings-loading">Загрузка товаров...</div>
+            ) : (
+              <>
+                <div className="admin-bookings-actions" style={{ justifyContent: 'flex-start' }}>
+                  <button
+                    type="button"
+                    className="admin-bookings-action-btn admin-bookings-action-btn_edit"
+                    onClick={startProductCreate}
+                  >
+                    Добавить товар
+                  </button>
+                </div>
+
+                {productEditingId && (
+                  <div className="admin-bookings-edit">
+                    <div className="admin-bookings-form-group">
+                      <label>Название</label>
+                      <input
+                        type="text"
+                        name="name"
+                        value={productForm.name}
+                        onChange={handleProductFormChange}
+                        className="admin-bookings-input"
+                        required
+                      />
+                    </div>
+                    <div className="admin-bookings-form-group">
+                      <label>Короткое описание (на карточке)</label>
+                      <input
+                        type="text"
+                        name="summary"
+                        value={productForm.summary}
+                        onChange={handleProductFormChange}
+                        className="admin-bookings-input"
+                      />
+                    </div>
+                    <div className="admin-bookings-form-group">
+                      <label>Подробное описание (в модалке)</label>
+                      <textarea
+                        name="detail"
+                        value={productForm.detail}
+                        onChange={handleProductFormChange}
+                        className="admin-bookings-input admin-bookings-input_textarea"
+                        rows={3}
+                      />
+                    </div>
+                    <div className="admin-bookings-form-group">
+                      <label>Состав</label>
+                      <input
+                        type="text"
+                        name="composition"
+                        value={productForm.composition}
+                        onChange={handleProductFormChange}
+                        className="admin-bookings-input"
+                      />
+                    </div>
+                    <div className="admin-bookings-form-group">
+                      <label>Цена (BYN)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        name="price"
+                        value={productForm.price}
+                        onChange={handleProductFormChange}
+                        className="admin-bookings-input"
+                      />
+                    </div>
+                    <div className="admin-bookings-form-group">
+                      <label>Картинка (URL или путь, например `/img/icons/1.jpg`)</label>
+                      <input
+                        type="text"
+                        name="image"
+                        value={productForm.image}
+                        onChange={handleProductFormChange}
+                        className="admin-bookings-input"
+                      />
+                    </div>
+                    <div className="admin-bookings-form-group">
+                      <label style={{ display: 'inline-flex', gap: 10, alignItems: 'center' }}>
+                        <input
+                          type="checkbox"
+                          name="is_active"
+                          checked={!!productForm.is_active}
+                          onChange={handleProductFormChange}
+                        />
+                        Активен (показывать в магазине)
+                      </label>
+                    </div>
+                    <div className="admin-bookings-edit-actions">
+                      <button
+                        type="button"
+                        className="admin-bookings-btn admin-bookings-btn_primary"
+                        onClick={saveProduct}
+                        disabled={productSaving}
+                      >
+                        {productSaving ? 'Сохранение...' : 'Сохранить товар'}
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-bookings-btn admin-bookings-btn_secondary"
+                        onClick={cancelProductEdit}
+                        disabled={productSaving}
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {products.length === 0 ? (
+                  <p className="admin-bookings-empty">Товаров пока нет. Нажмите «Добавить товар».</p>
+                ) : (
+                  <ul className="admin-bookings-list">
+                    {products.map((p) => (
+                      <li key={`product-${p.id}`} className="admin-bookings-item">
+                        <span className="admin-bookings-type">{p.name}</span>
+                        <span className="admin-bookings-datetime">
+                          Цена: {Number(p.price || 0).toLocaleString('ru-RU')} BYN • {p.is_active ? 'Активен' : 'Скрыт'}
+                        </span>
+                        <div className="admin-bookings-actions">
+                          <button
+                            type="button"
+                            className="admin-bookings-action-btn admin-bookings-action-btn_edit"
+                            onClick={() => startProductEdit(p)}
+                          >
+                            Изменить
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+
+            <h3 className="admin-bookings-title" style={{ marginTop: 18 }}>Заказы пользователей</h3>
             {purchasesError && <p className="admin-bookings-error">{purchasesError}</p>}
             {purchasesLoading ? (
               <div className="admin-bookings-loading">Загрузка...</div>
@@ -465,7 +846,127 @@ function AdminBookingsModal({ isOpen, onClose }) {
                         <option value="processing">В обработке</option>
                         <option value="ready">Готово к выдаче</option>
                         <option value="delivered">Выдано</option>
+                        <option value="cancelled">Отменён</option>
                       </select>
+                      <button
+                        type="button"
+                        className="admin-bookings-action-btn admin-bookings-action-btn_delete"
+                        onClick={async () => {
+                          if (!window.confirm('Отменить этот заказ?')) return;
+                          try {
+                            const res = await fetch(`${API_URL}users/admin/purchase-history/${p.id}/`, {
+                              method: 'PATCH',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${token}`,
+                              },
+                              body: JSON.stringify({ status: 'cancelled' }),
+                            });
+                            if (!res.ok) throw new Error('Не удалось отменить заказ');
+                            const updated = await res.json();
+                            setPurchases((prev) => prev.map((x) => (x.id === p.id ? updated : x)));
+                          } catch (err) {
+                            setPurchasesError(err.message || 'Ошибка отмены');
+                          }
+                        }}
+                        disabled={p.status === 'cancelled'}
+                      >
+                        Отменить
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-bookings-action-btn admin-bookings-action-btn_delete"
+                        onClick={async () => {
+                          if (!window.confirm('Удалить этот заказ безвозвратно?')) return;
+                          try {
+                            const res = await fetch(`${API_URL}users/admin/purchase-history/${p.id}/`, {
+                              method: 'DELETE',
+                              headers: { Authorization: `Bearer ${token}` },
+                            });
+                            if (!(res.status === 404 || res.ok)) throw new Error('Не удалось удалить заказ');
+                            setPurchases((prev) => prev.filter((x) => x.id !== p.id));
+                          } catch (err) {
+                            setPurchasesError(err.message || 'Ошибка удаления');
+                          }
+                        }}
+                      >
+                        Удалить
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+
+        {adminTab === 'profiles' && isSuperuser && (
+          <>
+            {profilesError && <p className="admin-bookings-error">{profilesError}</p>}
+            {profilesLoading ? (
+              <div className="admin-bookings-loading">Загрузка профилей...</div>
+            ) : profiles.length === 0 && !profilesError ? (
+              <p className="admin-bookings-empty">Профили отсутствуют.</p>
+            ) : (
+              <ul className="admin-bookings-list">
+                {profiles.map((p) => (
+                  <li key={p.id} className="admin-bookings-item">
+                    <span className="admin-bookings-user">{p.username}</span>
+                    <span className="admin-bookings-datetime">Email: {p.email || '—'}</span>
+                    <span className="admin-bookings-datetime">Имя: {p.first_name || '—'} {p.last_name || ''}</span>
+                    <span className="admin-bookings-phone">Телефон: {p.phone || 'Не указан'}</span>
+                    <span className="admin-bookings-datetime">
+                      Дата рождения: {p.date_of_birth ? new Date(p.date_of_birth).toLocaleDateString('ru-RU') : '—'}
+                    </span>
+                    <span className="admin-bookings-datetime">Роль: {p.role === 'manager' ? 'Менеджер' : 'Тренер'}</span>
+                    <span className="admin-bookings-datetime">Доступ админа: {p.is_staff ? 'Есть' : 'Нет'}</span>
+                    <div className="admin-bookings-actions">
+                      <select
+                        className="admin-bookings-input"
+                        value={p.role}
+                        onChange={async (e) => {
+                          const newRole = e.target.value;
+                          try {
+                            const res = await fetch(`${API_URL}users/admin/profiles/${p.id}/`, {
+                              method: 'PATCH',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${token}`,
+                              },
+                              body: JSON.stringify({ role: newRole, is_staff: p.is_staff }),
+                            });
+                            if (!res.ok) throw new Error('Не удалось обновить роль');
+                            const updated = await res.json();
+                            setProfiles((prev) => prev.map((x) => (x.id === p.id ? updated : x)));
+                          } catch (err) {
+                            setProfilesError(err.message || 'Ошибка обновления');
+                          }
+                        }}
+                      >
+                        <option value="trainer">Тренер</option>
+                        <option value="manager">Менеджер заказов</option>
+                      </select>
+                      <button
+                        type="button"
+                        className="admin-bookings-action-btn admin-bookings-action-btn_delete"
+                        onClick={async () => {
+                          if (!window.confirm(`Удалить профиль пользователя ${p.username}?`)) return;
+                          try {
+                            const res = await fetch(`${API_URL}users/admin/profiles/${p.id}/`, {
+                              method: 'DELETE',
+                              headers: { Authorization: `Bearer ${token}` },
+                            });
+                            if (!(res.status === 404 || res.ok)) throw new Error('Не удалось удалить профиль');
+                            setProfiles((prev) => prev.filter((x) => x.id !== p.id));
+                          } catch (err) {
+                            setProfilesError(err.message || 'Ошибка удаления профиля');
+                          }
+                        }}
+                        disabled={p.is_superuser}
+                        title={p.is_superuser ? 'Нельзя удалить superuser' : 'Удалить профиль'}
+                      >
+                        Удалить профиль
+                      </button>
                     </div>
                   </li>
                 ))}

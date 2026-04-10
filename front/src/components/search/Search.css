@@ -3,7 +3,7 @@
   width: 100vw;
   min-height: 150vh;
   overflow: hidden;
-  background-color: black;
+  background: linear-gradient(180deg, var(--brand-bg) 0%, var(--brand-surface-2) 100%);
 }
 
 body {
@@ -47,10 +47,11 @@ body {
 
 .search_workouts_title {
   text-align: center;
-  color: #fff;
+  color: var(--brand-text);
   font-size: 28px;
   margin-bottom: 32px;
   font-weight: 700;
+  text-shadow: 0 0 16px rgba(107, 239, 123, 0.22);
 }
 
 .search_workouts_grid {
@@ -62,17 +63,17 @@ body {
 }
 
 .search_workout_card {
-  background: #1a1a1a;
+  background: rgba(255, 255, 255, 0.92);
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid #333;
+  border: 1px solid rgba(107, 239, 123, 0.32);
   transition: transform 0.2s ease, border-color 0.2s ease;
   cursor: pointer;
 }
 
 .search_workout_card:hover {
   transform: translateY(-4px);
-  border-color: #555;
+  border-color: rgba(107, 239, 123, 0.65);
 }
 
 .search_workout_img_wrap {
@@ -89,14 +90,14 @@ body {
 }
 
 .search_workout_name {
-  color: #fff;
+  color: #145a30;
   font-size: 18px;
   font-weight: 600;
   margin: 16px 16px 8px;
 }
 
 .search_workout_desc {
-  color: #aaa;
+  color: #2f503a;
   font-size: 14px;
   line-height: 1.5;
   margin: 0 16px 20px;
@@ -118,23 +119,24 @@ body {
 }
 
 .search_info_modal {
-  background: #1a1a1a;
+  background: #ffffff;
   border-radius: 12px;
   max-width: 480px;
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
   position: relative;
-  border: 1px solid #333;
+  border: 1px solid rgba(107, 239, 123, 0.32);
+  box-shadow: 0 16px 48px rgba(18, 80, 40, 0.28);
 }
 
 .search_info_close {
   position: absolute;
   top: 12px;
   right: 12px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(31, 106, 59, 0.12);
   border: none;
-  color: #fff;
+  color: #145a30;
   font-size: 24px;
   width: 36px;
   height: 36px;
@@ -148,7 +150,7 @@ body {
 }
 
 .search_info_close:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(31, 106, 59, 0.2);
 }
 
 .search_info_img_wrap {
@@ -166,21 +168,21 @@ body {
 }
 
 .search_info_title {
-  color: #fff;
+  color: #145a30;
   font-size: 22px;
   font-weight: 600;
   margin: 20px 20px 10px;
 }
 
 .search_info_desc {
-  color: #ccc;
+  color: #2f503a;
   font-size: 15px;
   line-height: 1.5;
   margin: 0 20px 12px;
 }
 
 .search_info_details {
-  color: #aaa;
+  color: #3b5b45;
   font-size: 14px;
   line-height: 1.6;
   margin: 0 20px 24px;

@@ -2,7 +2,16 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import RefreshToken
 import re
-from .models import Profile, TrainingBooking, PurchaseHistory, WORKOUT_SCHEDULE
+import datetime
+from .models import (
+    Profile,
+    TrainingBooking,
+    PurchaseHistory,
+    TrainingBookingUpdate,
+    ShopProduct,
+    WORKOUT_SCHEDULE,
+    WORKOUT_TYPE_CHOICES,
+)
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -10,7 +19,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ('username', 'avatar', 'phone', 'date_of_birth')
+        fields = ('username', 'avatar', 'phone', 'date_of_birth', 'role')
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -23,6 +32,23 @@ class ProfileSerializer(serializers.ModelSerializer):
         data['phone'] = instance.phone or ''
         data['date_of_birth'] = instance.date_of_birth.isoformat() if instance.date_of_birth else None
         data['is_staff'] = request.user.is_staff if request else False
+        data['is_superuser'] = request.user.is_superuser if request else False
+        data['role'] = instance.role
+        is_superuser = bool(request and request.user.is_superuser)
+        data['can_manage_bookings'] = bool(
+            request
+            and (
+                is_superuser
+                or (request.user.is_staff and instance.role == Profile.ROLE_TRAINER)
+            )
+        )
+        data['can_manage_store'] = bool(
+            request
+            and (
+                is_superuser
+                or (request.user.is_staff and instance.role == Profile.ROLE_MANAGER)
+            )
+        )
         if instance.avatar:
             request = self.context.get('request')
             if request:
@@ -144,7 +170,106 @@ class TrainingBookingSerializer(serializers.ModelSerializer):
                     'time': 'На выбранный день и время эта тренировка не проводится.'
                 })
 
+            # Запрет пересечения тренировок.
+            # Каждая тренировка длится 1 час 30 минут (90 минут).
+            duration = datetime.timedelta(minutes=90)
+            requested_start = datetime.datetime.combine(date, time_val)
+            requested_end = requested_start + duration
+
+            existing_qs = TrainingBooking.objects.filter(date=date)
+            if self.instance:
+                existing_qs = existing_qs.exclude(pk=self.instance.pk)
+
+            for existing in existing_qs:
+                existing_start = datetime.datetime.combine(existing.date, existing.time)
+                existing_end = existing_start + duration
+                if requested_start < existing_end and requested_end > existing_start:
+                    raise serializers.ValidationError({
+                        'time': 'Нельзя записаться на пересекающееся время. Выберите другой слот.'
+                    })
+
         return attrs
+
+
+class TrainingBookingUpdateSerializer(serializers.ModelSerializer):
+    old_workout_type_display = serializers.SerializerMethodField()
+    new_workout_type_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TrainingBookingUpdate
+        fields = (
+            'id',
+            'booking',
+            'decision',
+            'old_workout_type',
+            'old_workout_type_display',
+            'old_date',
+            'old_time',
+            'old_trainer',
+            'old_comments',
+            'new_workout_type',
+            'new_workout_type_display',
+            'new_date',
+            'new_time',
+            'new_trainer',
+            'new_comments',
+            'created_at',
+            'seen_at',
+            'responded_at',
+        )
+        read_only_fields = ('id', 'created_at', 'seen_at', 'responded_at', 'booking')
+
+    def get_old_workout_type_display(self, obj):
+        mapping = dict(WORKOUT_TYPE_CHOICES)
+        return mapping.get(obj.old_workout_type, obj.old_workout_type)
+
+    def get_new_workout_type_display(self, obj):
+        mapping = dict(WORKOUT_TYPE_CHOICES)
+        return mapping.get(obj.new_workout_type, obj.new_workout_type)
+
+
+class AdminProfileSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    is_staff = serializers.BooleanField(required=False)
+    is_superuser = serializers.BooleanField(source='user.is_superuser', read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+    first_name = serializers.CharField(source='user.first_name', read_only=True)
+    last_name = serializers.CharField(source='user.last_name', read_only=True)
+
+    class Meta:
+        model = Profile
+        fields = (
+            'id',
+            'username',
+            'email',
+            'first_name',
+            'last_name',
+            'phone',
+            'date_of_birth',
+            'avatar',
+            'role',
+            'is_staff',
+            'is_superuser',
+        )
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Поле `is_staff` в модели относится не к Profile, а к User.
+        data['is_staff'] = instance.user.is_staff
+        return data
+
+    def update(self, instance, validated_data):
+        user = instance.user
+        is_staff = validated_data.pop('is_staff', None)
+        role = validated_data.get('role', None)
+
+        if is_staff is not None:
+            user.is_staff = is_staff
+            user.save()
+        if role is not None:
+            instance.role = role
+            instance.save()
+        return instance
 
 
 class AdminBookingSerializer(serializers.ModelSerializer):
@@ -166,6 +291,9 @@ class AdminBookingSerializer(serializers.ModelSerializer):
 
 
 class PurchaseHistorySerializer(serializers.ModelSerializer):
+    status_timeline = serializers.SerializerMethodField()
+    manager_phone = serializers.SerializerMethodField()
+
     class Meta:
         model = PurchaseHistory
         fields = (
@@ -180,6 +308,8 @@ class PurchaseHistorySerializer(serializers.ModelSerializer):
             'address',
             'comment',
             'status',
+            'status_timeline',
+            'manager_phone',
             'created_at',
         )
         read_only_fields = ('id', 'created_at', 'status')
@@ -189,12 +319,42 @@ class PurchaseHistorySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Количество должно быть не меньше 1.')
         return value
 
+    def get_status_timeline(self, obj):
+        timeline = [
+            {'status': 'created', 'changed_at': obj.created_at},
+            {'status': 'processing', 'changed_at': obj.created_at},
+            {'status': 'ready', 'changed_at': None},
+            {'status': 'delivered', 'changed_at': None},
+            {'status': 'cancelled', 'changed_at': None},
+        ]
+        history_rows = list(obj.status_history.all())
+        history_map = {row.status: row.changed_at for row in history_rows}
+        for step in timeline:
+            if step['status'] in history_map:
+                step['changed_at'] = history_map[step['status']]
+        # Если запись была создана до внедрения истории, используем created_at как старт.
+        if obj.status in ('ready', 'delivered') and not history_map.get('processing'):
+            timeline[1]['changed_at'] = obj.created_at
+        return timeline
+
+    def get_manager_phone(self, obj):
+        # Контакт менеджера для уточнения вопросов по отмене/статусу заказа.
+        manager_profile = (
+            Profile.objects.select_related('user')
+            .filter(role=Profile.ROLE_MANAGER, user__is_staff=True)
+            .exclude(phone='')
+            .order_by('id')
+            .first()
+        )
+        return manager_profile.phone if manager_profile else ''
+
 
 class PurchaseHistoryAdminSerializer(serializers.ModelSerializer):
     STATUS_CHOICES = (
         ('processing', 'В обработке'),
         ('ready', 'Готово к выдаче'),
         ('delivered', 'Выдано'),
+        ('cancelled', 'Отменён'),
     )
 
     status = serializers.ChoiceField(choices=STATUS_CHOICES)
@@ -228,3 +388,21 @@ class PurchaseHistoryAdminSerializer(serializers.ModelSerializer):
     def get_user_phone(self, obj):
         profile = getattr(obj.user, 'profile', None)
         return getattr(profile, 'phone', '') if profile else ''
+
+
+class ShopProductSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ShopProduct
+        fields = (
+            'id',
+            'name',
+            'summary',
+            'detail',
+            'composition',
+            'price',
+            'image',
+            'is_active',
+            'created_at',
+            'updated_at',
+        )
+        read_only_fields = ('id', 'created_at', 'updated_at')

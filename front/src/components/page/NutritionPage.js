@@ -3,6 +3,7 @@ import { SHOP_PRODUCTS } from '../../data/shopProducts';
 import { addOrderItem, loadOrders } from '../../utils/shopOrders';
 import './NutritionPage.css';
 
+const API_URL = 'http://127.0.0.1:8000/api/';
 const CURRENCY = 'BYN';
 
 const ProductDetailModal = ({ product, isLoggedIn, isInOrders, onClose, onAddToOrders, onOpenAuth }) => {
@@ -67,6 +68,7 @@ const NutritionPage = () => {
   const [shopMessage, setShopMessage] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [shopOrders, setShopOrders] = useState(() => loadOrders());
+  const [products, setProducts] = useState(() => SHOP_PRODUCTS);
 
   const syncAuth = useCallback(() => {
     setIsLoggedIn(!!localStorage.getItem('access_token'));
@@ -97,6 +99,33 @@ const NutritionPage = () => {
     window.addEventListener('shopOrdersUpdated', onShopOrdersUpdated);
     return () => window.removeEventListener('shopOrdersUpdated', onShopOrdersUpdated);
   }, [refreshShopOrders]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadProducts = async () => {
+      try {
+        const res = await fetch(`${API_URL}users/shop-products/`);
+        if (!res.ok) throw new Error('bad_response');
+        const data = await res.json();
+        if (!isMounted) return;
+        if (Array.isArray(data) && data.length) {
+          setProducts(data.map((p) => ({
+            ...p,
+            // normalize types expected by UI
+            price: typeof p.price === 'string' ? Number(p.price) : p.price,
+          })));
+        } else {
+          setProducts(SHOP_PRODUCTS);
+        }
+      } catch {
+        if (isMounted) setProducts(SHOP_PRODUCTS);
+      }
+    };
+    loadProducts();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedProduct) return undefined;
@@ -167,7 +196,7 @@ const NutritionPage = () => {
           )}
 
           <ul className="nutrition-shop__grid">
-            {SHOP_PRODUCTS.map((p) => {
+            {products.map((p) => {
               const inOrders = orderProductIds.has(p.id);
               return (
                 <li key={p.id} className="nutrition-shop__card">

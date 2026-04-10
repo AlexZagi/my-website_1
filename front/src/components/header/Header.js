@@ -1,4 +1,4 @@
-import logoImg from './../../img/icons/fitness.jpg'
+import logoImg from './../../img/icons/logo-neon.svg'
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import AuthModal from '../page/ProfileModal';
@@ -21,6 +21,9 @@ function Header() {
   const [showAdminBookingsModal, setShowAdminBookingsModal] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isStaff, setIsStaff] = useState(false);
+  const [isSuperuser, setIsSuperuser] = useState(false);
+  const [canManageBookings, setCanManageBookings] = useState(false);
+  const [canManageStore, setCanManageStore] = useState(false);
   const [username, setUsername] = useState(''); // Логин текущего пользователя
   const [hasBookingAlert, setHasBookingAlert] = useState(false);
   const navigate = useNavigate();
@@ -31,6 +34,9 @@ function Header() {
     setIsLoggedIn(!!token);
     setUsername(localStorage.getItem('username') || '');
     setIsStaff(localStorage.getItem('is_staff') === 'true');
+    setIsSuperuser(localStorage.getItem('is_superuser') === 'true');
+    setCanManageBookings(localStorage.getItem('can_manage_bookings') === 'true');
+    setCanManageStore(localStorage.getItem('can_manage_store') === 'true');
     if (!token) setHasBookingAlert(false);
   };
 
@@ -41,7 +47,7 @@ function Header() {
       return;
     }
     try {
-      const res = await fetch(`${API_URL}users/training-bookings/`, {
+      const res = await fetch(`${API_URL}users/training-booking-updates/alerts/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
@@ -49,7 +55,7 @@ function Header() {
         return;
       }
       const data = await res.json();
-      setHasBookingAlert(Array.isArray(data) && data.some((b) => b.admin_updated));
+      setHasBookingAlert(!!data?.has_unseen);
     } catch {
       setHasBookingAlert(false);
     }
@@ -77,6 +83,8 @@ function Header() {
 
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('loginStatusChange', handleLoginStatusChange);
+    const handleBookingAlertUpdated = () => fetchBookingAlerts();
+    window.addEventListener('bookingAlertUpdated', handleBookingAlertUpdated);
 
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
@@ -99,6 +107,7 @@ function Header() {
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('loginStatusChange', handleLoginStatusChange);
+      window.removeEventListener('bookingAlertUpdated', handleBookingAlertUpdated);
       window.removeEventListener('focus', fetchBookingAlerts);
       window.clearInterval(alertsInterval);
     };
@@ -143,8 +152,14 @@ function Header() {
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('username');
     localStorage.removeItem('is_staff');
+    localStorage.removeItem('is_superuser');
+    localStorage.removeItem('can_manage_bookings');
+    localStorage.removeItem('can_manage_store');
     setIsLoggedIn(false);
     setIsStaff(false);
+    setIsSuperuser(false);
+    setCanManageBookings(false);
+    setCanManageStore(false);
     setUsername('');
     window.dispatchEvent(new CustomEvent('loginStatusChange'));
     alert('Вы успешно вышли из системы.');
@@ -171,7 +186,15 @@ function Header() {
           <div className="header_nav">
             <ul>
               <li><button onClick={handleOpenScheduleModal} className="header_link_button">Расписание</button></li>
-              <li><Link to="/pitanie" className="header_link_button">Питание</Link></li>
+              {!isLoggedIn && (
+                <>
+                  <li><a href="/#about" className="header_link_button">О клубе</a></li>
+                  <li><a href="/#contacts" className="header_link_button">Контакты</a></li>
+                </>
+              )}
+              {(!isLoggedIn || (!isStaff && !isSuperuser)) && (
+                <li><Link to="/pitanie" className="header_link_button">Питание</Link></li>
+              )}
               {isLoggedIn && (
                 <li>
                   <button onClick={handleOpenProfileCabinetModal} className="header_link_button header_profile_link">
@@ -188,8 +211,10 @@ function Header() {
                   </button>
                 </li>
               )}
-              {isLoggedIn && <li><button onClick={handleOpenSignUpModal} className="header_link_button">Записаться</button></li>}
-              {isLoggedIn && isStaff && <li><button onClick={handleOpenAdminBookingsModal} className="header_link_button">Управление записями</button></li>}
+              {isLoggedIn && !isStaff && <li><button onClick={handleOpenSignUpModal} className="header_link_button">Записаться</button></li>}
+              {isLoggedIn && (isSuperuser || isStaff) && (isSuperuser || canManageBookings || canManageStore) && (
+                <li><button onClick={handleOpenAdminBookingsModal} className="header_link_button">Админ-панель</button></li>
+              )}
               <li>
                 {isLoggedIn ? (
                   <span className="header_user_block">

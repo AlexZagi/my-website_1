@@ -80,6 +80,9 @@ const AuthModal = ({ isOpen, onClose }) => {
             if (profileRes.ok) {
               const profileData = await profileRes.json();
               localStorage.setItem('is_staff', profileData.is_staff ? 'true' : 'false');
+              localStorage.setItem('is_superuser', profileData.is_superuser ? 'true' : 'false');
+              localStorage.setItem('can_manage_bookings', profileData.can_manage_bookings ? 'true' : 'false');
+              localStorage.setItem('can_manage_store', profileData.can_manage_store ? 'true' : 'false');
             }
           } catch (e) { /* ignore */ }
           window.dispatchEvent(new CustomEvent('loginStatusChange'));
