@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './ProfileCabinetModal.css';
 import { loadOrders, removeOrderItem } from '../../utils/shopOrders';
+import { capBelarusPhoneInput } from '../../utils/belarusPhone';
 import { Link } from 'react-router-dom';
 
 const API_URL = 'http://127.0.0.1:8000/api/';
@@ -202,6 +203,10 @@ function ProfileCabinetModal({ isOpen, onClose }) {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+    if (name === 'phone') {
+      setFormData((prev) => ({ ...prev, phone: capBelarusPhoneInput(value) }));
+      return;
+    }
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
@@ -416,6 +421,10 @@ function ProfileCabinetModal({ isOpen, onClose }) {
 
   const handleCheckoutFormChange = (e) => {
     const { name, value } = e.target;
+    if (name === 'phone') {
+      setCheckoutForm((prev) => ({ ...prev, phone: capBelarusPhoneInput(value) }));
+      return;
+    }
     setCheckoutForm((prev) => ({ ...prev, [name]: value }));
   };
 

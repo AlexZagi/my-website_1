@@ -119,7 +119,10 @@ class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
     password_confirm = serializers.CharField(write_only=True)
     email = serializers.EmailField(required=False, allow_blank=True)
-    phone = serializers.CharField(required=True, allow_blank=False, max_length=20, trim_whitespace=True)
+    # Телефон хранится в Profile, не на User — при ответе 201 нельзя читать user.phone.
+    phone = serializers.CharField(
+        required=True, allow_blank=False, max_length=20, trim_whitespace=True, write_only=True
+    )
 
     class Meta:
         model = User

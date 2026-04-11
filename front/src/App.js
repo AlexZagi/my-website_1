@@ -18,7 +18,6 @@ function App() {
             path="/"
             element={
               <>
-                <div>Главная страница (пустая)</div>
                 <Search />
               </>
             }

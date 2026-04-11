@@ -1,18 +1,15 @@
-import img1 from '../img/icons/1.jpg';
-import img2 from '../img/icons/2.jpg';
-import img3 from '../img/icons/3.jpg';
-import img4 from '../img/icons/4.jpg';
-import img5 from '../img/icons/5.jpg';
-import img6 from '../img/icons/6.jpg';
-import img7 from '../img/icons/7.jpg';
-import img8 from '../img/icons/8.jpg';
+/**
+ * Демо-каталог (если API пустой). Фото — те же файлы, что были в src/img/icons/
+ * с кириллическими именами; для URL они копируются в public/img/shop/ (латиница).
+ * Синхронизация: npm run start / npm run build (см. prestart/prebuild в package.json).
+ */
+const SHOP_IMG_BASE = `${process.env.PUBLIC_URL || ''}/img/shop`;
 
-/** Каталог магазина: поле image — фото товара (можно заменить импорты на свои файлы в `src/img/icons/`). */
 export const SHOP_PRODUCTS = [
   {
     id: 1,
     name: 'Сывороточный протеин',
-    image: img1,
+    image: `${SHOP_IMG_BASE}/shop-whey.jpg`,
     summary: 'Быстрое усвоение — после тренировки.',
     composition: 'Сывороточный белок, какао, натуральный ароматизатор, сукралоза.',
     detail:
@@ -22,7 +19,7 @@ export const SHOP_PRODUCTS = [
   {
     id: 2,
     name: 'Казеин',
-    image: img2,
+    image: `${SHOP_IMG_BASE}/shop-casein.jpg`,
     summary: 'Медленный белок — на ночь или длительный перерыв.',
     composition: 'Мицеллярный казеин, натуральный ароматизатор, лецитин.',
     detail:
@@ -32,7 +29,7 @@ export const SHOP_PRODUCTS = [
   {
     id: 3,
     name: 'BCAA',
-    image: img3,
+    image: `${SHOP_IMG_BASE}/shop-bcaa.png`,
     summary: 'Лейцин, изолейцин, валин — для восстановления.',
     composition: 'L-лейцин, L-изолейцин, L-валин, витамин B6.',
     detail:
@@ -42,7 +39,7 @@ export const SHOP_PRODUCTS = [
   {
     id: 4,
     name: 'Креатин моногидрат',
-    image: img4,
+    image: `${SHOP_IMG_BASE}/shop-creatine.jpg`,
     summary: 'Сила и объём — проверенная форма.',
     composition: 'Креатин моногидрат 100%.',
     detail:
@@ -52,7 +49,7 @@ export const SHOP_PRODUCTS = [
   {
     id: 5,
     name: 'Гейнер',
-    image: img5,
+    image: `${SHOP_IMG_BASE}/shop-gainer.jpg`,
     summary: 'Много калорий: белок + углеводы.',
     composition: 'Сывороточный белок, мальтодекстрин, овсяная мука, какао.',
     detail:
@@ -62,7 +59,7 @@ export const SHOP_PRODUCTS = [
   {
     id: 6,
     name: 'Предтренировочный комплекс',
-    image: img6,
+    image: `${SHOP_IMG_BASE}/shop-preworkout.jpg`,
     summary: 'Бодрость и фокус перед залом.',
     composition: 'Кофеин, бета-аланин, цитруллин малат, таурин, витамин C.',
     detail:
@@ -72,7 +69,7 @@ export const SHOP_PRODUCTS = [
   {
     id: 7,
     name: 'Омега-3',
-    image: img7,
+    image: `${SHOP_IMG_BASE}/shop-omega.jpg`,
     summary: 'Жирные кислоты EPA и DHA.',
     composition: 'Рыбий жир, EPA, DHA, желатиновая капсула, витамин E.',
     detail:
@@ -82,7 +79,7 @@ export const SHOP_PRODUCTS = [
   {
     id: 8,
     name: 'L-глютамин',
-    image: img8,
+    image: `${SHOP_IMG_BASE}/shop-glutamine.png`,
     summary: 'Восстановление и иммунитет.',
     composition: 'L-глютамин 100%.',
     detail:
@@ -92,7 +89,7 @@ export const SHOP_PRODUCTS = [
   {
     id: 9,
     name: 'Изотоник',
-    image: img1,
+    image: `${SHOP_IMG_BASE}/shop-isotonic.jpg`,
     summary: 'Вода и электролиты в движении.',
     composition: 'Натрий, калий, магний, витамин C, углеводная смесь.',
     detail:
@@ -102,7 +99,7 @@ export const SHOP_PRODUCTS = [
   {
     id: 10,
     name: 'Протеиновые батончики (упаковка)',
-    image: img2,
+    image: `${SHOP_IMG_BASE}/shop-bars.jpg`,
     summary: 'Перекус с белком в дороге.',
     composition: 'Молочный белок, арахис, овсяные хлопья, клетчатка.',
     detail:
@@ -112,7 +109,7 @@ export const SHOP_PRODUCTS = [
   {
     id: 11,
     name: 'Коллаген + витамин C',
-    image: img7,
+    image: `${SHOP_IMG_BASE}/shop-collagen.jpeg`,
     summary: 'Поддержка суставов, связок и кожи.',
     composition: 'Гидролизованный коллаген, витамин C, гиалуроновая кислота.',
     detail:
@@ -122,7 +119,7 @@ export const SHOP_PRODUCTS = [
   {
     id: 12,
     name: 'Мультивитамины для спортсменов',
-    image: img8,
+    image: `${SHOP_IMG_BASE}/shop-multi.png`,
     summary: 'Базовая витаминно-минеральная поддержка.',
     composition: 'Витамины A, C, D, E, группы B, магний, цинк, селен.',
     detail:
