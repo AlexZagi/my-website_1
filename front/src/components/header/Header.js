@@ -1,6 +1,6 @@
-import logoImg from './../../img/icons/fitness.jpg'
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import logoImg from './../../img/icons/logo-neon.svg'
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import AuthModal from '../page/ProfileModal';
 import ScheduleModal from '../page/ScheduleModal';
 import SignUpModal from '../page/SignUpModal';
@@ -19,30 +19,150 @@ function Header() {
   const [showSignUpModal, setShowSignUpModal] = useState(false);
   const [showProfileCabinetModal, setShowProfileCabinetModal] = useState(false);
   const [showAdminBookingsModal, setShowAdminBookingsModal] = useState(false);
+  const [adminModalOpenStore, setAdminModalOpenStore] = useState(false);
+  const [adminModalStoreProductId, setAdminModalStoreProductId] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isStaff, setIsStaff] = useState(false);
+  const [isSuperuser, setIsSuperuser] = useState(false);
+  const [canManageBookings, setCanManageBookings] = useState(false);
+  const [canManageStore, setCanManageStore] = useState(false);
   const [username, setUsername] = useState(''); // Логин текущего пользователя
+  const [hasBookingAlert, setHasBookingAlert] = useState(false);
+  const [hasAdminPanelAlert, setHasAdminPanelAlert] = useState(false);
+  const [adminAlertBookings, setAdminAlertBookings] = useState(false);
+  const [adminAlertPurchases, setAdminAlertPurchases] = useState(false);
+  const navigate = useNavigate();
+  const API_URL = 'http://127.0.0.1:8000/api/';
 
   const checkLoginStatus = () => {
     const token = localStorage.getItem('access_token');
     setIsLoggedIn(!!token);
     setUsername(localStorage.getItem('username') || '');
     setIsStaff(localStorage.getItem('is_staff') === 'true');
+    setIsSuperuser(localStorage.getItem('is_superuser') === 'true');
+    setCanManageBookings(localStorage.getItem('can_manage_bookings') === 'true');
+    setCanManageStore(localStorage.getItem('can_manage_store') === 'true');
+    if (!token) {
+      setHasBookingAlert(false);
+      setHasAdminPanelAlert(false);
+      setAdminAlertBookings(false);
+      setAdminAlertPurchases(false);
+    }
   };
+
+  const fetchBookingAlerts = useCallback(async () => {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      setHasBookingAlert(false);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_URL}users/training-booking-updates/alerts/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        setHasBookingAlert(false);
+        return;
+      }
+      const data = await res.json();
+      setHasBookingAlert(!!data?.has_unseen);
+    } catch {
+      setHasBookingAlert(false);
+    }
+  }, []);
+
+  const fetchAdminPanelAlerts = useCallback(async () => {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      setHasAdminPanelAlert(false);
+      setAdminAlertBookings(false);
+      setAdminAlertPurchases(false);
+      return;
+    }
+    const book = localStorage.getItem('can_manage_bookings') === 'true';
+    const store = localStorage.getItem('can_manage_store') === 'true';
+    if (!book && !store) {
+      setHasAdminPanelAlert(false);
+      setAdminAlertBookings(false);
+      setAdminAlertPurchases(false);
+      return;
+    }
+    const lb = localStorage.getItem('admin_header_last_booking_id') || '0';
+    const lu = localStorage.getItem('admin_header_last_booking_update_id') || '0';
+    const lp = localStorage.getItem('admin_header_last_purchase_id') || '0';
+    try {
+      const q = new URLSearchParams({
+        last_booking_id: lb,
+        last_booking_update_id: lu,
+        last_purchase_id: lp,
+      });
+      const res = await fetch(`${API_URL}users/admin/header-alerts/?${q}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        setHasAdminPanelAlert(false);
+        setAdminAlertBookings(false);
+        setAdminAlertPurchases(false);
+        return;
+      }
+      const data = await res.json();
+      const bNews = !!(book && data.bookings?.has_news);
+      const pNews = !!(store && data.purchases?.has_news);
+      setAdminAlertBookings(bNews);
+      setAdminAlertPurchases(pNews);
+      setHasAdminPanelAlert(bNews || pNews);
+    } catch {
+      setHasAdminPanelAlert(false);
+      setAdminAlertBookings(false);
+      setAdminAlertPurchases(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const openAuthFromPage = () => setShowAuthModal(true);
+    window.addEventListener('openAuthModal', openAuthFromPage);
+    return () => window.removeEventListener('openAuthModal', openAuthFromPage);
+  }, []);
+
+  useEffect(() => {
+    const openAdminFromPage = (e) => {
+      const d = e.detail || {};
+      if (d.tab === 'store') {
+        setAdminModalOpenStore(true);
+        setAdminModalStoreProductId(d.productId != null ? d.productId : null);
+      } else {
+        setAdminModalOpenStore(false);
+        setAdminModalStoreProductId(null);
+      }
+      setShowAdminBookingsModal(true);
+    };
+    window.addEventListener('openAdminBookingsModal', openAdminFromPage);
+    return () => window.removeEventListener('openAdminBookingsModal', openAdminFromPage);
+  }, []);
 
   useEffect(() => {
     checkLoginStatus(); // Проверяем статус при монтировании компонента
+    fetchBookingAlerts();
+    fetchAdminPanelAlerts();
 
     const handleStorageChange = () => {
       checkLoginStatus(); // Обновляем статус при изменении localStorage
+      fetchBookingAlerts();
+      fetchAdminPanelAlerts();
     };
 
     const handleLoginStatusChange = () => {
       checkLoginStatus();
+      fetchBookingAlerts();
+      fetchAdminPanelAlerts();
     };
 
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('loginStatusChange', handleLoginStatusChange);
+    const handleBookingAlertUpdated = () => fetchBookingAlerts();
+    window.addEventListener('bookingAlertUpdated', handleBookingAlertUpdated);
+    const handleAdminPanelAlertUpdated = () => fetchAdminPanelAlerts();
+    window.addEventListener('adminPanelAlertUpdated', handleAdminPanelAlertUpdated);
 
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
@@ -57,12 +177,26 @@ function Header() {
     };
 
     window.addEventListener('scroll', handleScroll);
+    const refreshAlertsOnFocus = () => {
+      fetchBookingAlerts();
+      fetchAdminPanelAlerts();
+    };
+    window.addEventListener('focus', refreshAlertsOnFocus);
+    const alertsInterval = window.setInterval(() => {
+      fetchBookingAlerts();
+      fetchAdminPanelAlerts();
+    }, 10000);
     return () => {
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('loginStatusChange', handleLoginStatusChange);
+      window.removeEventListener('bookingAlertUpdated', handleBookingAlertUpdated);
+      window.removeEventListener('adminPanelAlertUpdated', handleAdminPanelAlertUpdated);
+      window.removeEventListener('focus', refreshAlertsOnFocus);
+      window.clearInterval(alertsInterval);
     };
-  }, [lastScrollY]);
+  }, [fetchBookingAlerts, fetchAdminPanelAlerts, lastScrollY]);
+
 
   const handleOpenAuthModal = () => {
     setShowAuthModal(true);
@@ -102,19 +236,30 @@ function Header() {
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('username');
     localStorage.removeItem('is_staff');
+    localStorage.removeItem('is_superuser');
+    localStorage.removeItem('can_manage_bookings');
+    localStorage.removeItem('can_manage_store');
     setIsLoggedIn(false);
     setIsStaff(false);
+    setIsSuperuser(false);
+    setCanManageBookings(false);
+    setCanManageStore(false);
     setUsername('');
+    window.dispatchEvent(new CustomEvent('loginStatusChange'));
     alert('Вы успешно вышли из системы.');
-    // window.location.reload(); // Перезагрузить страницу для обновления состояния, если нужно
+    navigate('/');
   };
 
   const handleOpenAdminBookingsModal = () => {
+    setAdminModalOpenStore(false);
+    setAdminModalStoreProductId(null);
     setShowAdminBookingsModal(true);
   };
 
   const handleCloseAdminBookingsModal = () => {
     setShowAdminBookingsModal(false);
+    setAdminModalOpenStore(false);
+    setAdminModalStoreProductId(null);
   };
 
   return (
@@ -129,9 +274,56 @@ function Header() {
           <div className="header_nav">
             <ul>
               <li><button onClick={handleOpenScheduleModal} className="header_link_button">Расписание</button></li>
-              {isLoggedIn && <li><button onClick={handleOpenProfileCabinetModal} className="header_link_button">Личный кабинет</button></li>}
-              {isLoggedIn && <li><button onClick={handleOpenSignUpModal} className="header_link_button">Записаться</button></li>}
-              {isLoggedIn && isStaff && <li><button onClick={handleOpenAdminBookingsModal} className="header_link_button">Управление записями</button></li>}
+              {!isLoggedIn && (
+                <>
+                  <li><a href="/#about" className="header_link_button">О клубе</a></li>
+                  <li><a href="/#contacts" className="header_link_button">Контакты</a></li>
+                </>
+              )}
+              {(!isLoggedIn || (!isStaff && !isSuperuser) || canManageStore) && (
+                <li>
+                  <Link to="/pitanie" className="header_link_button">
+                    {canManageStore && isLoggedIn ? 'Магазин' : 'Питание'}
+                  </Link>
+                </li>
+              )}
+              {isLoggedIn && (
+                <li>
+                  <button onClick={handleOpenProfileCabinetModal} className="header_link_button header_profile_link">
+                    <span>Личный кабинет</span>
+                    {!isStaff && hasBookingAlert && (
+                      <span
+                        className="header_bell_button header_bell_button--active"
+                        title="Есть изменения от администратора"
+                        aria-label="Есть уведомления о записях"
+                      >
+                        🔔
+                      </span>
+                    )}
+                  </button>
+                </li>
+              )}
+              {isLoggedIn && !isStaff && <li><button onClick={handleOpenSignUpModal} className="header_link_button">Записаться</button></li>}
+              {isLoggedIn && (isSuperuser || isStaff) && (isSuperuser || canManageBookings || canManageStore) && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={handleOpenAdminBookingsModal}
+                    className="header_link_button header_profile_link"
+                  >
+                    <span>Админ-панель</span>
+                    {hasAdminPanelAlert && (
+                      <span
+                        className="header_bell_button header_bell_button--active"
+                        title="Есть обновления: новые записи, ответы клиентов или заказы"
+                        aria-label="Есть уведомления в админ-панели"
+                      >
+                        🔔
+                      </span>
+                    )}
+                  </button>
+                </li>
+              )}
               <li>
                 {isLoggedIn ? (
                   <span className="header_user_block">
@@ -150,7 +342,14 @@ function Header() {
       <ScheduleModal isOpen={showScheduleModal} onClose={handleCloseScheduleModal} />
       <SignUpModal isOpen={showSignUpModal} onClose={handleCloseSignUpModal} />
       <ProfileCabinetModal isOpen={showProfileCabinetModal} onClose={handleCloseProfileCabinetModal} />
-      <AdminBookingsModal isOpen={showAdminBookingsModal} onClose={handleCloseAdminBookingsModal} />
+      <AdminBookingsModal
+        isOpen={showAdminBookingsModal}
+        onClose={handleCloseAdminBookingsModal}
+        openStoreTab={adminModalOpenStore}
+        openStoreProductId={adminModalStoreProductId}
+        adminAlertBookings={adminAlertBookings}
+        adminAlertPurchases={adminAlertPurchases}
+      />
     </header>
   );
 }

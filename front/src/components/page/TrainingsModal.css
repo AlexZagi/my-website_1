@@ -13,37 +13,58 @@
 }
 
 .modal-content.large {
-  background-color: #f0f0f0; /* Светло-серый фон */
+  background: var(--brand-surface-2);
   padding: 30px;
   border-radius: 8px;
   width: 80%; /* Большая ширина */
   max-width: 1000px; /* Максимальная ширина */
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 10px 28px rgba(18, 80, 40, 0.22);
   position: relative;
   max-height: 90vh; /* Ограничиваем высоту модального окна */
   overflow-y: auto; /* Добавляем прокрутку для содержимого */
+  border: 1px solid var(--brand-border);
+  color: var(--brand-text);
 }
 
 .modal-close {
   position: absolute;
   top: 15px;
   right: 15px;
-  background: none;
-  border: none;
-  font-size: 24px;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(107, 239, 123, 0.38);
+  background: rgba(9, 19, 13, 0.72);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35), 0 0 18px rgba(107, 239, 123, 0.16);
+  font-size: 28px;
+  line-height: 1;
   cursor: pointer;
-  color: #333;
+  color: var(--brand-green);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close:hover {
+  background: rgba(15, 31, 21, 0.9);
+  border-color: rgba(107, 239, 123, 0.6);
+  color: #ffffff;
+}
+
+.modal-close:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(107, 239, 123, 0.22), 0 10px 24px rgba(0, 0, 0, 0.35);
 }
 
 .modal-content.large h1 {
   text-align: center;
-  color: #333;
+  color: var(--brand-green);
   margin-bottom: 15px;
 }
 
 .modal-content.large p {
   text-align: center;
-  color: #555;
+  color: var(--brand-text-muted);
   margin-bottom: 30px;
 }
 
@@ -55,12 +76,12 @@
 }
 
 .workout-card {
-  background-color: white;
-  border: 1px solid #ddd;
+  background: rgba(12, 20, 15, 0.92);
+  border: 1px solid rgba(107, 239, 123, 0.26);
   border-radius: 8px;
   padding: 20px;
   text-align: center;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 20px rgba(18, 80, 40, 0.12);
 }
 
 .workout-image {
@@ -72,12 +93,12 @@
 }
 
 .workout-card h3 {
-  color: #333;
+  color: var(--brand-green);
   margin-bottom: 10px;
 }
 
 .workout-card p {
-  color: #666;
+  color: var(--brand-text-muted);
   font-size: 14px;
   line-height: 1.5;
   min-height: 60px; /* Для единообразной высоты карточек */
@@ -85,7 +106,7 @@
 }
 
 .learn-more-btn {
-  background-color: #6c757d; /* Темно-серый */
+  background-color: var(--brand-green-3);
   color: white;
   border: none;
   padding: 10px 20px;
@@ -96,5 +117,5 @@
 }
 
 .learn-more-btn:hover {
-  background-color: #5a6268;
+  background-color: var(--brand-green-2);
 }

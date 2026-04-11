@@ -13,7 +13,7 @@
 }
 
 .modal-content {
-  background-color: #f0f0f0; /* Изменено на светло-серый */
+  background-color: #ffffff;
   padding: 20px;
   border-radius: 8px;
   width: 400px;
@@ -44,7 +44,7 @@
 }
 
 .modal-tabs button.active {
-  background-color: #6c757d; /* Изменено на темно-серый */
+  background-color: var(--brand-green-3);
   color: white;
 }
 
@@ -65,12 +65,68 @@
   width: 100%;
   padding: 8px;
   margin-top: 5px;
+  box-sizing: border-box;
+}
+
+.form-hint {
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: #5a5a5a;
+}
+
+.password-field {
+  position: relative;
+  margin-top: 5px;
+}
+
+.password-field__input {
+  width: 100%;
+  padding: 8px 42px 8px 8px;
+  margin-top: 0;
+  box-sizing: border-box;
+}
+
+.password-field__toggle {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  background: #f8f9fa;
+  cursor: pointer;
+  color: #333;
+}
+
+.password-field__toggle--icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  background: #f8f9fa;
+  color: #495057;
+}
+
+.password-field__toggle--icon:hover {
+  background: #e9ecef;
+  color: #212529;
+}
+
+.password-field__toggle:hover {
+  background: #e9ecef;
 }
 
 .submit-btn {
   width: 100%;
   padding: 10px;
-  background-color: #6c757d; /* Изменено на темно-серый */
+  background-color: var(--brand-green-3);
   color: white;
   border: none;
   cursor: pointer;
