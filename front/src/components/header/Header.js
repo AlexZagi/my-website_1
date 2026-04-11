@@ -6,6 +6,8 @@ import ScheduleModal from '../page/ScheduleModal';
 import SignUpModal from '../page/SignUpModal';
 import ProfileCabinetModal from '../page/ProfileCabinetModal';
 import AdminBookingsModal from '../page/AdminBookingsModal';
+import AboutModal from '../footer/AboutModal';
+import ContactModal from '../footer/ContactModal';
 
 import './Header.css'
 
@@ -31,6 +33,8 @@ function Header() {
   const [hasAdminPanelAlert, setHasAdminPanelAlert] = useState(false);
   const [adminAlertBookings, setAdminAlertBookings] = useState(false);
   const [adminAlertPurchases, setAdminAlertPurchases] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
   const navigate = useNavigate();
   const API_URL = 'http://127.0.0.1:8000/api/';
 
@@ -276,8 +280,26 @@ function Header() {
               <li><button onClick={handleOpenScheduleModal} className="header_link_button">Расписание</button></li>
               {!isLoggedIn && (
                 <>
-                  <li><a href="/#about" className="header_link_button">О клубе</a></li>
-                  <li><a href="/#contacts" className="header_link_button">Контакты</a></li>
+                  <li>
+                    <button
+                      type="button"
+                      className="header_link_button"
+                      onClick={() => setShowAboutModal(true)}
+                      aria-haspopup="dialog"
+                    >
+                      О клубе
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      className="header_link_button"
+                      onClick={() => setShowContactModal(true)}
+                      aria-haspopup="dialog"
+                    >
+                      Контакты
+                    </button>
+                  </li>
                 </>
               )}
               {(!isLoggedIn || (!isStaff && !isSuperuser) || canManageStore) && (
@@ -350,6 +372,12 @@ function Header() {
         adminAlertBookings={adminAlertBookings}
         adminAlertPurchases={adminAlertPurchases}
       />
+      {!isLoggedIn && (
+        <>
+          <AboutModal variant="controlled" isOpen={showAboutModal} onClose={() => setShowAboutModal(false)} />
+          <ContactModal variant="controlled" isOpen={showContactModal} onClose={() => setShowContactModal(false)} />
+        </>
+      )}
     </header>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './ProfileModal.css'; // Импорт CSS
+import { capBelarusPhoneInput } from '../../utils/belarusPhone';
 
 const API_URL = 'http://127.0.0.1:8000/api/'; // URL вашего бэкенда
 
@@ -80,7 +81,12 @@ const AuthModal = ({ isOpen, onClose }) => {
   }, [isOpen]);
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    if (name === 'phone') {
+      setFormData({ ...formData, phone: capBelarusPhoneInput(value) });
+      return;
+    }
+    setFormData({ ...formData, [name]: value });
   };
 
   const handleSubmit = async (e) => {
@@ -250,7 +256,8 @@ const AuthModal = ({ isOpen, onClose }) => {
                 required
               />
               <p className="form-hint">
-                Допустимо: +375 и 9 цифр, или 375…, 80… (как с городского), 029… без кода страны.
+                Допустимо: +375 и 9 цифр, или 375…, 80… (как с городского), 029… без кода страны. Не больше 12 цифр
+                в номере.
               </p>
             </div>
           )}
