@@ -121,6 +121,22 @@ color: var(--brand-green);
   text-shadow: 0 0 10px rgba(107, 239, 123, 0.55);
 }
 
+.header_admin_alert_dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 2px;
+}
+
+.header_admin_alert_dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand-green, #6bef7b);
+  box-shadow: 0 0 8px rgba(107, 239, 123, 0.75);
+  flex-shrink: 0;
+}
+
 .header_user_block {
   display: inline-flex;
   align-items: center;

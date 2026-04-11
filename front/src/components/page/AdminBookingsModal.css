@@ -63,6 +63,28 @@
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.admin-bookings-tab__label {
+  line-height: 1.2;
+}
+
+.admin-bookings-tab__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand-green, #6bef7b);
+  box-shadow: 0 0 8px rgba(107, 239, 123, 0.75);
+  flex-shrink: 0;
+}
+
+.admin-bookings-tab_active .admin-bookings-tab__dot {
+  background: #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.65);
 }
 
 .admin-bookings-tab_active {

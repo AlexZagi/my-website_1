@@ -59,6 +59,23 @@ const getAllowedDaysText = (workoutType) => {
   return `Для этой тренировки доступны дни: ${days.join(', ')}.`;
 };
 
+const getTodayLocalDateStr = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+/** Слот по локальной дате/времени уже в прошлом (нельзя записаться). */
+const isSlotInPast = (dateStr, timeStr) => {
+  if (!dateStr || !timeStr) return false;
+  const t = timeStr.slice(0, 5);
+  const slot = new Date(`${dateStr}T${t}:00`);
+  if (Number.isNaN(slot.getTime())) return true;
+  return slot.getTime() <= Date.now();
+};
+
 const SignUpModal = ({ isOpen, onClose }) => {
   const [formData, setFormData] = useState({
     workoutType: '',
@@ -108,17 +125,43 @@ const SignUpModal = ({ isOpen, onClose }) => {
     });
   };
 
+  const isDuplicateSlotForMe = (workoutType, dateStr, timeStr) => {
+    if (!workoutType || !dateStr || !timeStr) return false;
+    const t = timeStr.slice(0, 5);
+    return myBookings.some((b) => {
+      if (!b?.date || b.date !== dateStr || b.workout_type !== workoutType) return false;
+      const bt = typeof b.time === 'string' ? b.time.slice(0, 5) : String(b.time).slice(0, 5);
+      return bt === t;
+    });
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     const next = { ...formData, [name]: value };
 
     // При смене тренировки или даты пересчитываем доступное время
     if (name === 'workoutType' || name === 'date') {
+      const dateVal = name === 'date' ? value : next.date;
+      const todayStr = getTodayLocalDateStr();
+      if (name === 'date' && dateVal && dateVal < todayStr) {
+        next.date = '';
+        next.time = '';
+        setError('Нельзя выбрать прошедшую дату.');
+        setFormData(next);
+        return;
+      }
       const allowed = getAllowedTimes(
         name === 'workoutType' ? value : next.workoutType,
         name === 'date' ? value : next.date
       );
-      const filtered = allowed.filter((t) => isSlotFreeForMyBookings(t, name === 'date' ? value : next.date));
+      const dStr = name === 'date' ? value : next.date;
+      const wType = name === 'workoutType' ? value : next.workoutType;
+      const filtered = allowed.filter(
+        (t) =>
+          isSlotFreeForMyBookings(t, dStr) &&
+          !isSlotInPast(dStr, t) &&
+          !isDuplicateSlotForMe(wType, dStr, t)
+      );
       // Сбрасываем время, если оно не входит в доступные слоты
       if (!filtered.includes(next.time)) {
         next.time = '';
@@ -144,8 +187,26 @@ const SignUpModal = ({ isOpen, onClose }) => {
       return;
     }
 
+    const todayStr = getTodayLocalDateStr();
+    if (!formData.date || formData.date < todayStr) {
+      setError('Выберите сегодняшнюю или будущую дату.');
+      return;
+    }
+    if (isSlotInPast(formData.date, formData.time)) {
+      setError('Выберите время, которое ещё не прошло.');
+      return;
+    }
+    if (isDuplicateSlotForMe(formData.workoutType, formData.date, formData.time)) {
+      setError('Вы уже записаны на эту тренировку в выбранные дату и время.');
+      return;
+    }
     const allowed = getAllowedTimes(formData.workoutType, formData.date);
-    const filtered = allowed.filter((t) => isSlotFreeForMyBookings(t, formData.date));
+    const filtered = allowed.filter(
+      (t) =>
+        isSlotFreeForMyBookings(t, formData.date) &&
+        !isSlotInPast(formData.date, t) &&
+        !isDuplicateSlotForMe(formData.workoutType, formData.date, t)
+    );
     if (!filtered.includes(formData.time)) {
       const daysText = getAllowedDaysText(formData.workoutType);
       setError(`Выберите доступное время. ${daysText}`.trim());
@@ -173,6 +234,7 @@ const SignUpModal = ({ isOpen, onClose }) => {
         const errData = await res.json().catch(() => ({}));
         throw new Error(
           errData.detail ||
+            errData.date?.[0] ||
             errData.workout_type?.[0] ||
             errData.time?.[0] ||
             'Ошибка записи'
@@ -190,8 +252,14 @@ const SignUpModal = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
+  const todayStr = getTodayLocalDateStr();
   const allowedTimes = getAllowedTimes(formData.workoutType, formData.date);
-  const filteredAllowedTimes = allowedTimes.filter((t) => isSlotFreeForMyBookings(t, formData.date));
+  const filteredAllowedTimes = allowedTimes.filter(
+    (t) =>
+      isSlotFreeForMyBookings(t, formData.date) &&
+      !isSlotInPast(formData.date, t) &&
+      !isDuplicateSlotForMe(formData.workoutType, formData.date, t)
+  );
   const daysHint = getAllowedDaysText(formData.workoutType);
 
   return (
@@ -233,6 +301,7 @@ const SignUpModal = ({ isOpen, onClose }) => {
               name="date"
               value={formData.date}
               onChange={handleChange}
+              min={todayStr}
               required
             />
           </div>

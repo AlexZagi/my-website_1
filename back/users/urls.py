@@ -5,7 +5,7 @@ from .views import (
     AdminBookingListDetailView, AdminBookingDetailView, PurchaseHistoryListCreateView,
     PurchaseHistoryAdminListView, PurchaseHistoryAdminDetailView,
     TrainingBookingUpdateListView, TrainingBookingUpdateSeenView, TrainingBookingUpdateRespondView,
-    TrainingBookingUpdateAlertsView, AdminProfileListView, AdminProfileDetailView,
+    TrainingBookingUpdateAlertsView, AdminHeaderAlertsView, AdminProfileListView, AdminProfileDetailView,
     ShopProductListView, AdminShopProductListCreateView, AdminShopProductDetailView,
 )
 
@@ -24,6 +24,7 @@ urlpatterns = [
     path('training-booking-updates/seen/', TrainingBookingUpdateSeenView.as_view(), name='training-booking-updates-seen'),
     path('training-booking-updates/<int:pk>/respond/', TrainingBookingUpdateRespondView.as_view(), name='training-booking-update-respond'),
     path('training-booking-updates/alerts/', TrainingBookingUpdateAlertsView.as_view(), name='training-booking-updates-alerts'),
+    path('admin/header-alerts/', AdminHeaderAlertsView.as_view(), name='admin-header-alerts'),
     path('admin/profiles/', AdminProfileListView.as_view(), name='admin-profiles'),
     path('admin/profiles/<int:pk>/', AdminProfileDetailView.as_view(), name='admin-profile-detail'),
     path('shop-products/', ShopProductListView.as_view(), name='shop-products'),

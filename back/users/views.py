@@ -9,6 +9,7 @@ from .serializers import (
     TrainingBookingUpdateSerializer, AdminProfileSerializer, ShopProductSerializer,
 )
 
+from django.db.models import Max
 from django.utils import timezone
 
 class RegisterAPI(generics.GenericAPIView):
@@ -61,7 +62,7 @@ class TrainingBookingListCreateView(APIView):
         return Response(serializer.data)
 
     def post(self, request):
-        serializer = TrainingBookingSerializer(data=request.data)
+        serializer = TrainingBookingSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         booking = serializer.save(user=request.user)
         profile, _ = Profile.objects.get_or_create(user=request.user)
@@ -89,7 +90,9 @@ class TrainingBookingDetailView(APIView):
         booking = self.get_booking(request, pk)
         if not booking:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = TrainingBookingSerializer(booking, data=request.data, partial=True)
+        serializer = TrainingBookingSerializer(
+            booking, data=request.data, partial=True, context={'request': request}
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save(admin_updated=False)
         return Response(serializer.data)
@@ -152,7 +155,12 @@ class AdminBookingDetailView(APIView):
             'trainer': booking.trainer,
             'comments': booking.comments,
         }
-        serializer = TrainingBookingSerializer(booking, data=request.data, partial=True)
+        serializer = TrainingBookingSerializer(
+            booking,
+            data=request.data,
+            partial=True,
+            context={'request': request, 'skip_booking_date_guard': True},
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save(admin_updated=True)
 
@@ -281,6 +289,70 @@ class TrainingBookingUpdateAlertsView(APIView):
             seen_at__isnull=True,
         ).exists()
         return Response({'has_unseen': has_unseen})
+
+
+class AdminHeaderAlertsView(APIView):
+    """Сводка для колокольчика у админ-панели: новые записи / ответы клиентов / новые заказы."""
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request):
+        if not (request.user.is_superuser or request.user.is_staff):
+            return Response({'detail': 'Недостаточно прав.'}, status=status.HTTP_403_FORBIDDEN)
+
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        is_sup = request.user.is_superuser
+        trainer_ok = is_sup or (
+            request.user.is_staff and profile.role == Profile.ROLE_TRAINER
+        )
+        manager_ok = is_sup or (
+            request.user.is_staff and profile.role == Profile.ROLE_MANAGER
+        )
+
+        def _int_param(name):
+            raw = request.query_params.get(name) or '0'
+            try:
+                return int(raw)
+            except ValueError:
+                return 0
+
+        lb = _int_param('last_booking_id')
+        lu = _int_param('last_booking_update_id')
+        lp = _int_param('last_purchase_id')
+
+        bookings_payload = {
+            'has_news': False,
+            'max_booking_id': 0,
+            'max_booking_update_id': 0,
+        }
+        if trainer_ok:
+            max_b = TrainingBooking.objects.aggregate(m=Max('id'))['m'] or 0
+            max_u = (
+                TrainingBookingUpdate.objects.filter(
+                    decision__in=(
+                        TrainingBookingUpdate.STATUS_ACCEPTED,
+                        TrainingBookingUpdate.STATUS_REJECTED,
+                    )
+                ).aggregate(m=Max('id'))['m']
+                or 0
+            )
+            bookings_payload = {
+                'has_news': max_b > lb or max_u > lu,
+                'max_booking_id': max_b,
+                'max_booking_update_id': max_u,
+            }
+
+        purchases_payload = {
+            'has_news': False,
+            'max_purchase_id': 0,
+        }
+        if manager_ok:
+            max_p = PurchaseHistory.objects.aggregate(m=Max('id'))['m'] or 0
+            purchases_payload = {
+                'has_news': max_p > lp,
+                'max_purchase_id': max_p,
+            }
+
+        return Response({'bookings': bookings_payload, 'purchases': purchases_payload})
 
 
 class AdminProfileListView(APIView):

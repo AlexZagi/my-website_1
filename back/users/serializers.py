@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.utils import timezone
 from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -190,6 +191,46 @@ class TrainingBookingSerializer(serializers.ModelSerializer):
         workout_type = attrs.get('workout_type') or (self.instance.workout_type if self.instance else None)
         date = attrs.get('date') or (self.instance.date if self.instance else None)
         time_val = attrs.get('time') or (self.instance.time if self.instance else None)
+
+        request = self.context.get('request')
+        skip_date_guard = self.context.get('skip_booking_date_guard', False)
+        schedule_changed = self.instance is None or any(
+            k in attrs for k in ('date', 'time', 'workout_type')
+        )
+
+        if not skip_date_guard and schedule_changed and date:
+            if date < timezone.localdate():
+                raise serializers.ValidationError({
+                    'date': 'Нельзя выбрать прошедшую дату.',
+                })
+            if time_val:
+                start_naive = datetime.datetime.combine(date, time_val)
+                if timezone.is_naive(start_naive):
+                    start_dt = timezone.make_aware(start_naive)
+                else:
+                    start_dt = start_naive
+                if start_dt <= timezone.localtime():
+                    raise serializers.ValidationError({
+                        'time': 'Нельзя записаться на время, которое уже прошло.',
+                    })
+
+        target_user = self.instance.user if self.instance else None
+        if target_user is None and request and request.user.is_authenticated:
+            target_user = request.user
+
+        if target_user and target_user.is_authenticated and workout_type and date and time_val:
+            dup_qs = TrainingBooking.objects.filter(
+                user=target_user,
+                workout_type=workout_type,
+                date=date,
+                time=time_val,
+            )
+            if self.instance:
+                dup_qs = dup_qs.exclude(pk=self.instance.pk)
+            if dup_qs.exists():
+                raise serializers.ValidationError({
+                    'time': 'Вы уже записаны на эту тренировку в выбранные дату и время.',
+                })
 
         if workout_type and date and time_val:
             weekday = date.weekday()  # 0 = понедельник, 6 = воскресенье

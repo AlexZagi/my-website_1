@@ -511,7 +511,13 @@ function ProfileCabinetModal({ isOpen, onClose }) {
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || errData.workout_type?.[0] || 'Ошибка сохранения');
+        throw new Error(
+          errData.detail ||
+            errData.date?.[0] ||
+            errData.workout_type?.[0] ||
+            errData.time?.[0] ||
+            'Ошибка сохранения'
+        );
       }
       const updated = await res.json();
       setBookings((prev) => prev.map((b) => (b.id === editingId ? updated : b)));
@@ -553,6 +559,11 @@ function ProfileCabinetModal({ isOpen, onClose }) {
       setError('Сначала выберите дату в календаре для переноса записи.');
       return;
     }
+    const todayIso = toIsoDate(new Date());
+    if (selectedCalendarDate < todayIso) {
+      setError('Нельзя перенести запись на прошедшую дату.');
+      return;
+    }
     if (booking.date === selectedCalendarDate) {
       setError('Выберите другую дату для переноса записи.');
       return;
@@ -588,6 +599,8 @@ function ProfileCabinetModal({ isOpen, onClose }) {
   };
 
   if (!isOpen) return null;
+
+  const minBookingDateStr = toIsoDate(new Date());
 
   return (
     <div className="profile-cabinet-overlay">
@@ -1011,6 +1024,7 @@ function ProfileCabinetModal({ isOpen, onClose }) {
                               name="date"
                               value={editFormData.date}
                               onChange={handleEditFormChange}
+                              min={minBookingDateStr}
                               className="profile-cabinet-input"
                               required
                             />
@@ -1108,14 +1122,22 @@ function ProfileCabinetModal({ isOpen, onClose }) {
           <div className="profile-cabinet-checkout-modal" onClick={(e) => e.stopPropagation()}>
             <button type="button" className="profile-cabinet-close" onClick={closeCheckout}>×</button>
             <h3 className="profile-cabinet-bookings-title">Оформление покупки</h3>
-            <p className="profile-cabinet-checkout-product">{checkoutItem.name}</p>
-            <p className="profile-cabinet-checkout-total">
-              Итого: {(getNumericPrice(checkoutItem.price) * getOrderQuantity(checkoutItem.id)).toLocaleString('ru-RU')} {CURRENCY}
-            </p>
             <form className="profile-cabinet-checkout-form" onSubmit={handleCheckoutSubmit}>
               <div className="profile-cabinet-form-group">
-                <label>Количество</label>
+                <span className="profile-cabinet-form-label-text" id="profile-checkout-lbl-product">
+                  Наименование товара
+                </span>
+                <p
+                  className="profile-cabinet-checkout-value"
+                  aria-labelledby="profile-checkout-lbl-product"
+                >
+                  {checkoutItem.name}
+                </p>
+              </div>
+              <div className="profile-cabinet-form-group">
+                <label htmlFor="profile-checkout-qty">Количество, шт.</label>
                 <input
+                  id="profile-checkout-qty"
                   type="number"
                   min="1"
                   max="99"
@@ -1126,46 +1148,69 @@ function ProfileCabinetModal({ isOpen, onClose }) {
                 />
               </div>
               <div className="profile-cabinet-form-group">
-                <label>ФИО</label>
+                <span className="profile-cabinet-form-label-text" id="profile-checkout-lbl-total">
+                  Сумма к оплате
+                </span>
+                <p
+                  className="profile-cabinet-checkout-value profile-cabinet-checkout-value--total"
+                  aria-labelledby="profile-checkout-lbl-total"
+                >
+                  {(getNumericPrice(checkoutItem.price) * getOrderQuantity(checkoutItem.id)).toLocaleString('ru-RU')}{' '}
+                  {CURRENCY}
+                </p>
+              </div>
+              <div className="profile-cabinet-form-group">
+                <label htmlFor="profile-checkout-fullname">ФИО получателя</label>
                 <input
+                  id="profile-checkout-fullname"
                   type="text"
                   name="fullName"
                   value={checkoutForm.fullName}
                   onChange={handleCheckoutFormChange}
                   className="profile-cabinet-input"
+                  placeholder="Как к вам обращаться при выдаче"
+                  autoComplete="name"
                   required
                 />
               </div>
               <div className="profile-cabinet-form-group">
-                <label>Телефон</label>
+                <label htmlFor="profile-checkout-phone">Телефон для связи</label>
                 <input
+                  id="profile-checkout-phone"
                   type="tel"
                   name="phone"
                   value={checkoutForm.phone}
                   onChange={handleCheckoutFormChange}
                   className="profile-cabinet-input"
+                  placeholder="+375 (29) 123-45-67"
+                  autoComplete="tel"
                   required
                 />
               </div>
               <div className="profile-cabinet-form-group">
-                <label>Адрес доставки</label>
+                <label htmlFor="profile-checkout-address">Адрес доставки или пункта выдачи</label>
                 <input
+                  id="profile-checkout-address"
                   type="text"
                   name="address"
                   value={checkoutForm.address}
                   onChange={handleCheckoutFormChange}
                   className="profile-cabinet-input"
+                  placeholder="Город, улица, дом, подъезд"
+                  autoComplete="street-address"
                   required
                 />
               </div>
               <div className="profile-cabinet-form-group">
-                <label>Комментарий</label>
+                <label htmlFor="profile-checkout-comment">Комментарий к заказу (необязательно)</label>
                 <textarea
+                  id="profile-checkout-comment"
                   name="comment"
                   value={checkoutForm.comment}
                   onChange={handleCheckoutFormChange}
                   className="profile-cabinet-input profile-cabinet-input_textarea"
-                  rows={2}
+                  placeholder="Пожелания по времени доставки и т.п."
+                  rows={3}
                 />
               </div>
               <button

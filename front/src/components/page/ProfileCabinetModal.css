@@ -817,16 +817,29 @@
   position: relative;
 }
 
-.profile-cabinet-checkout-product {
-  margin: 0 0 6px;
-  font-size: 15px;
-  font-weight: 600;
+.profile-cabinet-checkout-form .profile-cabinet-form-group {
+  margin-bottom: 14px;
+}
+
+.profile-cabinet-checkout-form .profile-cabinet-form-group label,
+.profile-cabinet-checkout-form .profile-cabinet-form-label-text {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 500;
   color: #333;
 }
 
-.profile-cabinet-checkout-total {
-  margin: 0 0 14px;
+.profile-cabinet-checkout-value {
+  margin: 0;
   font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  line-height: 1.4;
+}
+
+.profile-cabinet-checkout-value--total {
+  font-size: 16px;
   font-weight: 700;
   color: #1f6a3b;
 }

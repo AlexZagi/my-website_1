@@ -82,7 +82,7 @@
 
 .password-field__input {
   width: 100%;
-  padding: 8px 88px 8px 8px;
+  padding: 8px 42px 8px 8px;
   margin-top: 0;
   box-sizing: border-box;
 }
@@ -99,6 +99,24 @@
   background: #f8f9fa;
   cursor: pointer;
   color: #333;
+}
+
+.password-field__toggle--icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  background: #f8f9fa;
+  color: #495057;
+}
+
+.password-field__toggle--icon:hover {
+  background: #e9ecef;
+  color: #212529;
 }
 
 .password-field__toggle:hover {

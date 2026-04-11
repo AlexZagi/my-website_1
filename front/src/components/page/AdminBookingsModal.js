@@ -69,7 +69,27 @@ const getAllowedDaysText = (workoutType) => {
   return `Для этой тренировки доступны дни: ${days.join(', ')}.`;
 };
 
-function AdminBookingsModal({ isOpen, onClose, openStoreTab = false, openStoreProductId = null }) {
+const formatOrderPlacedAt = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+function AdminBookingsModal({
+  isOpen,
+  onClose,
+  openStoreTab = false,
+  openStoreProductId = null,
+  adminAlertBookings = false,
+  adminAlertPurchases = false,
+}) {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -84,7 +104,7 @@ function AdminBookingsModal({ isOpen, onClose, openStoreTab = false, openStorePr
   const [editSaving, setEditSaving] = useState(false);
   const [deleteLoadingId, setDeleteLoadingId] = useState(null);
 
-  const [adminTab, setAdminTab] = useState('bookings'); // 'bookings' | 'store' | 'profiles'
+  const [adminTab, setAdminTab] = useState('bookings'); // 'bookings' | 'store_products' | 'store_orders' | 'profiles'
   const [purchases, setPurchases] = useState([]);
   const [purchasesLoading, setPurchasesLoading] = useState(false);
   const [purchasesError, setPurchasesError] = useState('');
@@ -259,7 +279,7 @@ function AdminBookingsModal({ isOpen, onClose, openStoreTab = false, openStorePr
       fetchPurchases();
       fetchProducts();
       if (isSuperuser) fetchProfiles();
-      if (!canManageBookings && canManageStore) setAdminTab('store');
+      if (!canManageBookings && canManageStore) setAdminTab('store_products');
       if (canManageBookings && !canManageStore) setAdminTab('bookings');
       if (isSuperuser && adminTab === 'profiles') fetchProfiles();
     } else if (!isOpen) {
@@ -299,12 +319,78 @@ function AdminBookingsModal({ isOpen, onClose, openStoreTab = false, openStorePr
     const wasOpen = prevModalOpenRef.current;
     prevModalOpenRef.current = isOpen;
     if (isOpen && !wasOpen && openStoreTab && canManageStore) {
-      setAdminTab('store');
+      setAdminTab('store_products');
     }
     if (!isOpen) {
       consumedOpenStoreProductIdRef.current = null;
     }
   }, [isOpen, openStoreTab, canManageStore]);
+
+  useEffect(() => {
+    if (!isOpen || !token) return;
+    if (!canManageBookings || adminTab !== 'bookings') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const lb = localStorage.getItem('admin_header_last_booking_id') || '0';
+        const lu = localStorage.getItem('admin_header_last_booking_update_id') || '0';
+        const lp = localStorage.getItem('admin_header_last_purchase_id') || '0';
+        const q = new URLSearchParams({
+          last_booking_id: lb,
+          last_booking_update_id: lu,
+          last_purchase_id: lp,
+        });
+        const res = await fetch(`${API_URL}users/admin/header-alerts/?${q}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (cancelled || !res.ok) return;
+        const data = await res.json();
+        if (cancelled || !data.bookings) return;
+        localStorage.setItem('admin_header_last_booking_id', String(data.bookings.max_booking_id ?? 0));
+        localStorage.setItem(
+          'admin_header_last_booking_update_id',
+          String(data.bookings.max_booking_update_id ?? 0)
+        );
+        window.dispatchEvent(new CustomEvent('adminPanelAlertUpdated'));
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, adminTab, token, canManageBookings]);
+
+  useEffect(() => {
+    if (!isOpen || !token) return;
+    if (!canManageStore || adminTab !== 'store_orders') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const lb = localStorage.getItem('admin_header_last_booking_id') || '0';
+        const lu = localStorage.getItem('admin_header_last_booking_update_id') || '0';
+        const lp = localStorage.getItem('admin_header_last_purchase_id') || '0';
+        const q = new URLSearchParams({
+          last_booking_id: lb,
+          last_booking_update_id: lu,
+          last_purchase_id: lp,
+        });
+        const res = await fetch(`${API_URL}users/admin/header-alerts/?${q}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (cancelled || !res.ok) return;
+        const data = await res.json();
+        if (cancelled || !data.purchases) return;
+        localStorage.setItem('admin_header_last_purchase_id', String(data.purchases.max_purchase_id ?? 0));
+        window.dispatchEvent(new CustomEvent('adminPanelAlertUpdated'));
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, adminTab, token, canManageStore]);
 
   const startProductCreate = () => {
     setProductEditingId('new');
@@ -337,7 +423,7 @@ function AdminBookingsModal({ isOpen, onClose, openStoreTab = false, openStorePr
   };
 
   useEffect(() => {
-    if (!isOpen || openStoreProductId == null || !canManageStore || adminTab !== 'store') return;
+    if (!isOpen || openStoreProductId == null || !canManageStore || adminTab !== 'store_products') return;
     if (productsFetchInFlightRef.current || productsLoading) return;
     const key = String(openStoreProductId);
     if (consumedOpenStoreProductIdRef.current === key) return;
@@ -730,7 +816,13 @@ function AdminBookingsModal({ isOpen, onClose, openStoreTab = false, openStorePr
     <div className="admin-bookings-overlay">
       <div className="admin-bookings-modal">
         <button type="button" className="admin-bookings-close" onClick={onClose}>×</button>
-        <h2>Управление записями</h2>
+        <h2>
+          {canManageBookings
+            ? 'Управление записями'
+            : canManageStore
+              ? 'Управление магазином'
+              : 'Админ-панель'}
+        </h2>
         <div className="admin-bookings-tabs">
           {canManageBookings && (
             <button
@@ -738,16 +830,39 @@ function AdminBookingsModal({ isOpen, onClose, openStoreTab = false, openStorePr
               className={`admin-bookings-tab ${adminTab === 'bookings' ? 'admin-bookings-tab_active' : ''}`}
               onClick={() => setAdminTab('bookings')}
             >
-              Записи
+              <span className="admin-bookings-tab__label">Записи</span>
+              {adminAlertBookings && (
+                <span
+                  className="admin-bookings-tab__dot"
+                  title="Новые записи или ответы клиентов"
+                  aria-hidden
+                />
+              )}
             </button>
           )}
           {canManageStore && (
             <button
               type="button"
-              className={`admin-bookings-tab ${adminTab === 'store' ? 'admin-bookings-tab_active' : ''}`}
-              onClick={() => setAdminTab('store')}
+              className={`admin-bookings-tab ${adminTab === 'store_products' ? 'admin-bookings-tab_active' : ''}`}
+              onClick={() => setAdminTab('store_products')}
             >
-              Магазин
+              <span className="admin-bookings-tab__label">Товары</span>
+            </button>
+          )}
+          {canManageStore && (
+            <button
+              type="button"
+              className={`admin-bookings-tab ${adminTab === 'store_orders' ? 'admin-bookings-tab_active' : ''}`}
+              onClick={() => setAdminTab('store_orders')}
+            >
+              <span className="admin-bookings-tab__label">Заказы</span>
+              {adminAlertPurchases && (
+                <span
+                  className="admin-bookings-tab__dot"
+                  title="Новые заказы"
+                  aria-hidden
+                />
+              )}
             </button>
           )}
           {isSuperuser && (
@@ -913,7 +1028,7 @@ function AdminBookingsModal({ isOpen, onClose, openStoreTab = false, openStorePr
           </>
         )}
 
-        {adminTab === 'store' && (
+        {adminTab === 'store_products' && (
           <>
             <h3 className="admin-bookings-title">Товары (карточки магазина)</h3>
             {productsError && <p className="admin-bookings-error">{productsError}</p>}
@@ -1006,8 +1121,12 @@ function AdminBookingsModal({ isOpen, onClose, openStoreTab = false, openStorePr
                 )}
               </>
             )}
+          </>
+        )}
 
-            <h3 className="admin-bookings-title" style={{ marginTop: 18 }}>Заказы пользователей</h3>
+        {adminTab === 'store_orders' && (
+          <>
+            <h3 className="admin-bookings-title">Заказы пользователей</h3>
             {purchasesError && <p className="admin-bookings-error">{purchasesError}</p>}
             {purchasesLoading ? (
               <div className="admin-bookings-loading">Загрузка...</div>
@@ -1022,6 +1141,9 @@ function AdminBookingsModal({ isOpen, onClose, openStoreTab = false, openStorePr
                     </span>
                     <span className="admin-bookings-phone">Телефон: {p.user_phone || p.phone || 'Не указан'}</span>
                     <span className="admin-bookings-type">Товар: {p.product_name}</span>
+                    <span className="admin-bookings-datetime">
+                      Оформлен: {formatOrderPlacedAt(p.created_at)}
+                    </span>
                     <span className="admin-bookings-datetime">
                       Кол-во: {p.quantity} • Сумма: {Number(p.total_price).toLocaleString('ru-RU')} BYN
                     </span>
@@ -1126,34 +1248,8 @@ function AdminBookingsModal({ isOpen, onClose, openStoreTab = false, openStorePr
                     <span className="admin-bookings-datetime">
                       Дата рождения: {p.date_of_birth ? new Date(p.date_of_birth).toLocaleDateString('ru-RU') : '—'}
                     </span>
-                    <span className="admin-bookings-datetime">Роль: {p.role === 'manager' ? 'Менеджер' : 'Тренер'}</span>
                     <span className="admin-bookings-datetime">Доступ админа: {p.is_staff ? 'Есть' : 'Нет'}</span>
                     <div className="admin-bookings-actions">
-                      <select
-                        className="admin-bookings-input"
-                        value={p.role}
-                        onChange={async (e) => {
-                          const newRole = e.target.value;
-                          try {
-                            const res = await fetch(`${API_URL}users/admin/profiles/${p.id}/`, {
-                              method: 'PATCH',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                Authorization: `Bearer ${token}`,
-                              },
-                              body: JSON.stringify({ role: newRole, is_staff: p.is_staff }),
-                            });
-                            if (!res.ok) throw new Error('Не удалось обновить роль');
-                            const updated = await res.json();
-                            setProfiles((prev) => prev.map((x) => (x.id === p.id ? updated : x)));
-                          } catch (err) {
-                            setProfilesError(err.message || 'Ошибка обновления');
-                          }
-                        }}
-                      >
-                        <option value="trainer">Тренер</option>
-                        <option value="manager">Менеджер заказов</option>
-                      </select>
                       <button
                         type="button"
                         className="admin-bookings-action-btn admin-bookings-action-btn_delete"

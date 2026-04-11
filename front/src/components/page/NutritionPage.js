@@ -231,7 +231,7 @@ const NutritionPage = () => {
             )}
             {canManageStore && isLoggedIn && (
               <p className="nutrition-shop__manager-hint">
-                Редактирование и заказы: вкладка «Магазин» в админ-панели. Заказы как у клиента для менеджера недоступны.
+                Редактирование товаров — вкладка «Товары», статусы заказов — «Заказы» в админ-панели. Заказы как у клиента для менеджера недоступны.
                 Если каталог на сервере пуст, в админке нажмите «Заполнить демо-каталог с сайта».
               </p>
             )}
@@ -245,7 +245,7 @@ const NutritionPage = () => {
 
           {canManageStore && isLoggedIn && products.length === 0 && (
             <p className="nutrition-shop__message" role="status">
-              Каталог на сервере пуст. Откройте «Админ-панель» → «Магазин» → «Заполнить демо-каталог с сайта», затем
+              Каталог на сервере пуст. Откройте «Админ-панель» → «Товары» → «Заполнить демо-каталог с сайта», затем
               обновите страницу при необходимости.
             </p>
           )}
@@ -275,44 +275,46 @@ const NutritionPage = () => {
                   <div className="nutrition-shop__thumb">
                     <img src={p.image} alt="" className="nutrition-shop__thumb-img" />
                   </div>
-                  <h3 className="nutrition-shop__name">{p.name}</h3>
-                  <p className="nutrition-shop__desc">{p.summary}</p>
-                  {p.composition && <p className="nutrition-shop__composition">Состав: {p.composition}</p>}
-                  <p className="nutrition-shop__price">{p.price.toLocaleString('ru-RU')} {CURRENCY}</p>
-                  <span className="nutrition-shop__more nutrition-shop__more--hint">Подробнее</span>
-                  {canManageStore && isLoggedIn && (
-                    <button
-                      type="button"
-                      className="nutrition-shop__edit-catalog nutrition-shop__edit-catalog--card"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openProductInAdmin(p);
-                      }}
-                    >
-                      Редактировать товар
-                    </button>
-                  )}
-                  <div className="nutrition-shop__actions" onClick={(e) => e.stopPropagation()}>
-                    {!(canManageStore && isLoggedIn) &&
-                      (isLoggedIn ? (
-                        <button
-                          type="button"
-                          className={`nutrition-shop__buy ${inOrders ? 'nutrition-shop__buy--added' : ''}`}
-                          onClick={() => !inOrders && handleAddToOrders(p)}
-                          disabled={inOrders}
-                        >
-                          {inOrders ? 'В моих заказах' : 'В мои заказы'}
-                        </button>
-                      ) : (
-                        <>
-                          <button type="button" className="nutrition-shop__buy nutrition-shop__buy--locked" disabled>
-                            В мои заказы
+                  <div className="nutrition-shop__card-body">
+                    <h3 className="nutrition-shop__name">{p.name}</h3>
+                    <p className="nutrition-shop__desc">{p.summary}</p>
+                    {p.composition && <p className="nutrition-shop__composition">Состав: {p.composition}</p>}
+                    <p className="nutrition-shop__price">{p.price.toLocaleString('ru-RU')} {CURRENCY}</p>
+                    <span className="nutrition-shop__more nutrition-shop__more--hint">Подробнее</span>
+                    {canManageStore && isLoggedIn && (
+                      <button
+                        type="button"
+                        className="nutrition-shop__edit-catalog nutrition-shop__edit-catalog--card"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openProductInAdmin(p);
+                        }}
+                      >
+                        Редактировать товар
+                      </button>
+                    )}
+                    <div className="nutrition-shop__actions" onClick={(e) => e.stopPropagation()}>
+                      {!(canManageStore && isLoggedIn) &&
+                        (isLoggedIn ? (
+                          <button
+                            type="button"
+                            className={`nutrition-shop__buy ${inOrders ? 'nutrition-shop__buy--added' : ''}`}
+                            onClick={() => !inOrders && handleAddToOrders(p)}
+                            disabled={inOrders}
+                          >
+                            {inOrders ? 'В моих заказах' : 'В мои заказы'}
                           </button>
-                          <button type="button" className="nutrition-shop__login" onClick={openAuthModal}>
-                            Войти, чтобы добавить в заказы
-                          </button>
-                        </>
-                      ))}
+                        ) : (
+                          <>
+                            <button type="button" className="nutrition-shop__buy nutrition-shop__buy--locked" disabled>
+                              В мои заказы
+                            </button>
+                            <button type="button" className="nutrition-shop__login" onClick={openAuthModal}>
+                              Войти, чтобы добавить в заказы
+                            </button>
+                          </>
+                        ))}
+                    </div>
                   </div>
                 </li>
               );
